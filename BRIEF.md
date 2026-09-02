@@ -70,11 +70,13 @@ It must **execute** actions, not describe them.
 
 Read this twice. Getting it wrong means nothing runs tomorrow.
 
-- **macOS on an Intel x86_64 Mac.** Not Apple Silicon. Anything Apple-Silicon-only (MLX,
-  many recent PyTorch wheels, `mps`) is unavailable. PyPI has **no** `torch` wheels for
-  macOS x86_64 at modern versions — if you need torch, it must come from **conda-forge**
-  (`conda install --override-channels -c conda-forge pytorch`), and you should prefer a
-  design that does not need torch at all.
+- **A 2019 Intel Core i9 MacBook Pro.** Not Apple Silicon. No usable GPU for ML: no MPS,
+  no CUDA, and the discrete Radeon is not a practical inference target. This machine
+  **throttles hard under sustained load** and the fans are audible — a heavy assistant is
+  worse than no assistant, because the user will turn it off.
+- Anything Apple-Silicon-only (MLX, `mps`, most current PyTorch wheels) is unavailable.
+  PyPI has **no** modern `torch` wheels for macOS x86_64. **Design so that torch is never
+  needed.** If you think you need it, you have chosen the wrong component — choose again.
 - **Python 3.11+, Node 20+, npm and conda are installed. Rust/cargo is NOT. Xcode is NOT
   guaranteed.** Prefer a stack that needs neither.
 - **No LLM is configured yet** — no Ollama, no LM Studio, no API keys anywhere.
@@ -86,16 +88,73 @@ behaviour** — no AppleScript, no Accessibility API, no microphone, no menu bar
 
 ---
 
+## 2b. Performance budget — this is a hard requirement, not a nice-to-have
+
+The user explicitly asked for something **lightweight**. Treat these as acceptance
+criteria and record measured or estimated numbers in `STATUS.md`.
+
+| Budget | Target |
+| --- | --- |
+| Idle RAM (whole app) | **< 250 MB** |
+| Idle CPU | **~0%** — no polling loops, no always-on listening |
+| Cold start to menu-bar icon | **< 3 s** |
+| Push-to-talk → transcript for a short phrase | **< 2 s** |
+
+Rules that follow from this, and that you must not trade away:
+
+- **No Electron, no Chromium, no bundled browser runtime.** A menu-bar app in
+  `rumps`/PyObjC costs a few tens of MB; Electron costs hundreds. If you want any richer
+  UI later, serve a small local page in the user's *existing* browser on demand.
+- **No always-on wake word.** Continuous audio + a detection model burns CPU forever on a
+  machine that throttles. **Push-to-talk only** for v1 (hotkey down or hotkey toggle). Say
+  so in the README as a deliberate choice, not a missing feature.
+- **No torch, no transformers, no heavyweight ML stack in the app process.** Prefer
+  `faster-whisper` (CTranslate2, int8, no torch) at the **`tiny`/`base`** size, or macOS's
+  own on-device Speech framework via PyObjC if your research shows it is usable. Do not
+  ship `large-v3`; do not ship WhisperX.
+- **TTS is macOS `say` by default** — zero dependencies, zero RAM, instant. Anything better
+  is strictly optional and off by default.
+- **Lazy-load everything.** The ASR model loads on first use, not at launch, and unloads
+  after a few minutes idle. Nothing heavy is imported at start-up; keep module-level
+  imports cheap and import inside functions where it matters.
+- **No vector database, no embedding model.** SQLite plus scoped SQL `LIKE` is the whole
+  memory layer.
+- **No background daemon polling.** Event-driven only.
+- Keep the dependency list short and justify each one in `docs/DECISIONS.md`. Every
+  dependency is a start-up cost and a thing that breaks on Intel macOS.
+
+### The LLM question — be realistic and let the user choose
+
+A 7B+ local model on a 2019 i9 CPU is *slow* — single-digit tokens/sec — and an agent loop
+makes several calls per request. Do not pretend otherwise.
+
+- Support both, via the provider abstraction, and make the choice a first-class setting.
+- **Local**: Ollama with a genuinely small model (~1.5B–3B, e.g. `qwen2.5:3b`,
+  `llama3.2:3b`). Research and state the honest expected latency on this hardware.
+- **Cloud**: any OpenAI-compatible endpoint. On this machine a fast cloud model will feel
+  dramatically better and costs the Mac nothing — Groq and Cerebras are very fast and have
+  free tiers worth naming in `SETUP.md`.
+- **Recommend the hybrid in `SETUP.md`**: a small local model for simple, frequent commands
+  ("open Safari"), a stronger model for planning. Per-agent model selection already allows
+  exactly this — use it, and ship sensible defaults.
+- Make it obvious in the UI which one is in use, and never send audio or file contents to a
+  cloud model without explicit consent.
+
+---
+
 ## 3. Phase 0 — research before you write code
 
 Use WebSearch and WebFetch. Write what you find, with links and dates, to
 `docs/RESEARCH.md`. Cover at least:
 
-1. **Menu-bar app stack.** Compare `rumps`, PyObjC, Electron, Tauri for a macOS menu-bar
-   assistant. Which installs on Intel macOS with no Rust and no Xcode? Recommend one.
-2. **Local speech-to-text on an Intel CPU.** Compare `faster-whisper` (CTranslate2),
-   `whisper.cpp`/`pywhispercpp`, `openai-whisper`, and Apple's built-in dictation. Which
-   gives usable latency on an Intel CPU with no GPU? What model size?
+1. **Menu-bar app stack, ranked by footprint.** Compare `rumps`, PyObjC and Electron for a
+   macOS menu-bar assistant. Measure or find real idle-RAM numbers. Which installs on Intel
+   macOS with no Rust and no Xcode? Recommend the lightest one that works.
+2. **Speech-to-text on a 2019 Intel i9 with no GPU.** Compare `faster-whisper`
+   (CTranslate2, int8) at `tiny`/`base`, `whisper.cpp`/`pywhispercpp`, and Apple's
+   on-device Speech framework via PyObjC. Find real latency and RAM numbers for CPU-only
+   x86_64. Pick the one that hits the < 2 s budget without a fan spin-up. Explicitly
+   reject anything needing torch.
 3. **Text-to-speech.** macOS `say` needs zero dependencies and always works — treat it as
    the floor. Research one better local option and how to make it optional.
 4. **Global hotkey + push-to-talk on macOS** without Xcode. What permissions does macOS
@@ -104,9 +163,11 @@ Use WebSearch and WebFetch. Write what you find, with links and dates, to
    `System Events`, JXA. How do you enumerate and click UI elements *by name* rather than
    by coordinates? What does the Accessibility permission prompt look like and how is it
    granted?
-6. **Local LLM options for an Intel Mac.** Ollama on Intel — which small models are usable
-   (llama3.2:3b, qwen2.5:3b, phi)? What throughput should be expected? How is Ollama
-   installed and a model pulled non-interactively?
+6. **Local LLM on a 2019 Intel i9, honestly.** Ollama on Intel CPU — find real measured
+   tokens/sec for 1.5B and 3B models on comparable hardware. Is a multi-step agent loop
+   actually tolerable? Compare against a fast cloud endpoint (Groq, Cerebras free tiers).
+   Give the user a clear, numbers-backed recommendation in SETUP.md rather than a vague
+   'you can use either'.
 7. **Wake-word / always-listening** options and their cost. Decide whether v1 uses
    push-to-talk only (recommended) and say why.
 
