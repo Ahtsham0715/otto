@@ -11,6 +11,31 @@ you pushed survives. Never leave work sitting in the sandbox.
 
 ---
 
+## 0. Delivery — read this before anything else
+
+Your work only reaches the user if it is **pushed to `main`**. A pre-flight probe on
+2026-09-02 showed the push failing with:
+
+    remote: Claude doesn't have GitHub access to Ahtsham0715/otto
+    fatal: ... The requested URL returned error: 403
+
+The user was asked to install the Claude GitHub App before this run. **Do not assume it
+worked.** Instead:
+
+1. **First action of the session**, before research: make a trivial commit (touch
+   `docs/.keep`) and run `git push origin main`. Report the outcome.
+2. **If the push SUCCEEDS**: proceed normally, pushing every 15-30 minutes.
+3. **If the push FAILS**: keep working anyway and keep committing locally. Retry
+   `git push origin main` after *every* phase — the user may install the app part-way
+   through the night, and the moment they do, your accumulated commits will land.
+4. **At the end**, if push still fails, say so as the very first line of your final
+   message, state exactly how many commits are stranded, and include the full
+   `git log --oneline` so the user knows what was built. Do not bury this.
+
+Never delete or amend commits to "clean up" — every commit is a unit of delivered work.
+
+---
+
 ## 1. What Otto is
 
 A menu-bar macOS app you talk to. Press a hotkey, speak, it acts on your Mac, verifies the
