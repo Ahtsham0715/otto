@@ -32,6 +32,16 @@ worked.** Instead:
    message, state exactly how many commits are stranded, and include the full
    `git log --oneline` so the user knows what was built. Do not bury this.
 
+**Known sandbox quirk, verified on 2026-09-02:** the checkout starts on a *detached HEAD*
+and the local `main` ref can be stale, so your first `git push` may be rejected as
+`non-fast-forward` even though authentication is fine. That is not an auth failure. Fix it
+once, at the start, with:
+
+    git checkout main && git fetch origin main && git reset --hard origin/main
+
+then commit and push normally. **Never** use `git push --force` — a non-fast-forward means
+you are behind, not that the remote is wrong.
+
 Never delete or amend commits to "clean up" — every commit is a unit of delivered work.
 
 ---
