@@ -97,6 +97,29 @@ def _step(n: int, agent: str, description: str, tool: str, args: dict,
     )
 
 
+def expand_home(services: "Services", text: str) -> Path:
+    """Expand a leading `~` against Otto's *configured* home.
+
+    `Path.expanduser()` uses the process environment, which is not necessarily the
+    home Otto is sandboxed to — and a path that resolves somewhere unexpected is
+    exactly what the sandbox is there to catch, so get it right here.
+    """
+    home = Path(services.config.home)
+    if text == "~":
+        return home
+    if text.startswith("~/"):
+        return home / text[2:]
+    return Path(text)
+
+
+def canonical_app(services: "Services", name: str) -> str:
+    """Return the installed app's real name, so 'safari' becomes 'Safari'."""
+    try:
+        return services.mac.resolve_app(name)
+    except Exception:
+        return name
+
+
 def resolve_folder(services: "Services", phrase: str) -> Path | None:
     """Turn 'my Desktop' / 'Documents' / '~/Projects/app' into a real path.
 
@@ -114,12 +137,12 @@ def resolve_folder(services: "Services", phrase: str) -> Path | None:
         return home / FOLDER_WORDS[lowered]
 
     if text.startswith(("~", "/")):
-        return Path(text).expanduser()
+        return expand_home(services, text)
 
     # "my project", "the project", "my projects folder" → remembered location.
     if "project" in lowered:
         for memory in services.memory.search("projects folder location", limit=5):
-            candidate = _path_in(memory.value)
+            candidate = _path_in(services, memory.value)
             if candidate is not None:
                 remainder = re.sub(r".*project(s)?\b", "", lowered).strip(" /")
                 return (candidate / remainder) if remainder else candidate
@@ -133,9 +156,9 @@ def resolve_folder(services: "Services", phrase: str) -> Path | None:
     return home / "Desktop" / text
 
 
-def _path_in(value: str) -> Path | None:
+def _path_in(services: "Services", value: str) -> Path | None:
     match = re.search(r"(~[\w./-]*|/[\w./-]+)", value or "")
-    return Path(match.group(1)).expanduser() if match else None
+    return expand_home(services, match.group(1)) if match else None
 
 
 def _app_name(raw: str) -> str:
@@ -173,7 +196,7 @@ _WHAT_REMEMBER = re.compile(
 _SUMMARISE = re.compile(
     r"^(?:read|open|summarise|summarize)\s+(?:this file\s+|the file\s+|file\s+)?"
     r"(?P<path>[~/][^\s]+|[\w .-]+\.\w{1,6})"
-    r"(?:\s+and\s+(?:summarise|summarize|sum it up|tell me what.*))?$",
+    r"(?:\s+and\s+(?:summarise|summarize|sum(?:marise)?\s*it\s*up|tell me).*)?$",
     re.I,
 )
 _LIST_DIR = re.compile(
@@ -324,6 +347,7 @@ def match(request: str, services: "Services") -> FastMatch | None:
     if m:
         app = _app_name(m.group("app"))
         if app and _plausible_app(app, services):
+            app = canonical_app(services, app)
             return FastMatch(
                 Plan([_step(1, "mac", f"Open {app}", "open_app", {"name": app})]),
                 spoken=f"Opening {app}.",
@@ -362,7 +386,7 @@ def _resolve_file(services: "Services", raw: str) -> Path | None:
     if not text:
         return None
     if text.startswith(("~", "/")):
-        return Path(text).expanduser()
+        return expand_home(services, text)
     home = Path(services.config.home)
     for folder in ("Desktop", "Documents", "Downloads"):
         candidate = home / folder / text
