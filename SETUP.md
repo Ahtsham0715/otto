@@ -112,6 +112,34 @@ It is **push-to-talk on purpose**. Otto is not listening the rest of the time �
 is no wake word and no open microphone, which is the main reason it costs nothing when
 idle on a laptop that throttles. See README → "Deliberate omissions".
 
+### Answering Otto
+
+Before anything that writes, runs or deletes, Otto asks — out loud:
+
+> *"Create the folder Invoices on your Desktop? Say yes or no."*
+
+Press the hotkey and say **yes** or **no**. The menu bar also shows **✅ Approve**
+and **❌ Deny** while a question is open, if your hands are already on the
+trackpad. There is deliberately no modal dialog: one would block the screen while
+you were trying to answer it by voice.
+
+| Say | What happens |
+| --- | --- |
+| "yes", "yeah", "go ahead", "do it", "approve" | Approves the pending action |
+| "no", "nope", "don't", "deny", "skip it" | Declines it |
+| "stop", "cancel", "never mind" | Cancels whatever is running |
+| "say that again", "what did you say" | Repeats Otto's last answer |
+| "what can you do", "help" | Lists the commands out loud |
+
+Two details worth knowing:
+
+- **Only a bare answer counts as consent.** "Yes" approves; "yes but not that
+  one" does not — Otto treats it as a sentence, keeps the question open and asks
+  again. This is deliberate: a stray word must never approve something
+  irreversible.
+- **While a question is open, a new command is deferred**, not dropped. Otto
+  re-asks the question. Say "stop" if you want to abandon it and start over.
+
 To change the key, edit `~/.otto/config.json`:
 
 ```json

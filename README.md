@@ -29,8 +29,29 @@ model, no network and no tokens.
 | "Read ~/Documents/notes.md and summarise it" | A summary, spoken |
 | "Remember that my projects live in ~/Projects" | Stored, and used later without being asked again |
 | "Open my project and run the tests" | Editor opens, the right test command runs, you hear the result |
+| "Create the folder Invoices on your Desktop?" — "yes" | Confirmations are asked out loud and answered out loud; your hands never leave the keyboard |
+| "stop" / "say that again" / "what can you do" | Cancel, repeat, and a spoken list of what Otto handles |
 
 ---
+
+## Talking to it
+
+Press ⌃⌥Space, speak, press again. Otto is push-to-talk: it is not listening the
+rest of the time.
+
+Everything Otto needs from you can be said, because reaching for the trackpad
+mid-sentence is the thing that makes a voice assistant not get used:
+
+- **Confirmations are spoken.** When Otto needs your OK it *asks* — "Create the
+  folder Invoices on your Desktop? Say yes or no" — and you answer by voice.
+  There is no modal dialog blocking the screen; the question also sits in the
+  menu with Approve and Deny if you would rather click.
+- **"yes" means yes, and only that.** The match is strict: "yes but not that
+  one" is not consent, it is a sentence, and it leaves the question standing.
+- **"stop"** cancels whatever is running. **"say that again"** repeats Otto's
+  last answer. **"what can you do"** lists the commands out loud.
+- **Ask for something else while Otto is waiting** and it re-asks the question
+  rather than quietly dropping it.
 
 ## How it is built
 
@@ -66,7 +87,7 @@ QA, Reviewer are records — id, role, instructions, model tier, tools, permissi
 ceiling, memory scope, step budget. Adding a specialist is adding a record.
 
 **The macOS boundary is an interface.** One `MacBridge` with an `osascript`
-implementation and a fake. That is what lets a 478-test suite run on Linux — and it is
+implementation and a fake. That is what lets a 553-test suite run on Linux — and it is
 why this README is careful, further down, about what has and has not been run on a real
 Mac.
 
@@ -209,7 +230,7 @@ otto/
   voice/              capture, ASR, the shared pipeline
   ui/                 menu bar, hotkey, developer console
 docs/                 RESEARCH, DECISIONS, ARCHITECTURE
-tests/                478 tests, all runnable without a Mac
+tests/                553 tests, all runnable without a Mac
 ```
 
 Start with [`SETUP.md`](SETUP.md). Then [`STATUS.md`](STATUS.md), which is candid about
