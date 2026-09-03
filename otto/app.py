@@ -43,6 +43,11 @@ class Otto:
         self.state: str = IDLE
         self.last_error: str = ""
         self._state_hooks: list[StateHook] = []
+        self._ui_approval_hook: ApprovalHook | None = None
+        #: True once something can deliver a spoken answer (the menu-bar app sets
+        #: it when it builds a voice pipeline). Without it an unanswerable
+        #: approval is denied at once instead of waiting for the timeout.
+        self.voice_answers: bool = False
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
 
@@ -63,14 +68,76 @@ class Otto:
                 pass  # a broken UI hook must never break the run
 
     def set_approval_hook(self, hook: ApprovalHook | None) -> None:
-        """Where approval prompts go. Without one the broker denies (fails closed)."""
-        self.services.broker.set_ask(hook)
+        """Where approval prompts go.
+
+        Otto wraps the UI's hook rather than handing the broker straight to it,
+        so that *every* approval — however it is displayed — also moves Otto into
+        the WAITING state and is asked out loud. Voice is the primary interface;
+        a question the user cannot hear is a question they cannot answer.
+        Without a UI hook the broker still fails closed.
+        """
+        self._ui_approval_hook = hook
+        self.services.broker.set_ask(self._on_approval)
+
+    def _announce(self, approval: Approval) -> None:
+        self.set_state(WAITING)
+        if self.services.config.speak_results:
+            from .voice.replies import spoken_question
+
+            self.services.speak(spoken_question(approval.reason))
+
+    def _on_approval(self, approval: Approval) -> None:
+        """Every approval, whatever displays it, is announced out loud first."""
+        self._announce(approval)
+
+        hook = self._ui_approval_hook
+        if hook is not None:
+            hook(approval)
+            return
+        if not self.voice_answers:
+            # No UI and no microphone: there is nobody who could say yes, so fail
+            # closed immediately rather than making a scripted run sit out the
+            # broker's timeout.
+            approval.decide(False)
+
+    def decide_approval(self, granted: bool, approval: Approval | None = None) -> bool:
+        """Answer the oldest pending approval. Used by voice and by the menu."""
+        if approval is None:
+            pending = self.pending_approvals()
+            if not pending:
+                return False
+            approval = pending[0]
+        if not approval.pending:
+            return False
+        approval.decide(granted)
+        # A task is still running; the next tool call will move it on from here.
+        if self.state == WAITING:
+            self.set_state(EXECUTING)
+        return True
 
     # -- the one entry point ----------------------------------------------
 
     def handle_utterance(self, text: str, *, source: str = "text") -> Task:
-        """Run one request to completion. Blocking; use `submit` for the UI."""
-        task = Task(request=(text or "").strip(), source=source)
+        """Run one request to completion. Blocking; use `submit` for the UI.
+
+        Answers to Otto's own questions are routed before anything else: with an
+        approval waiting, "yes" means *approve that*, not "start a task called
+        yes". See `voice/replies.py` for why the matching is strict.
+        """
+        spoken = (text or "").strip()
+        answered = self._handle_reply(spoken)
+        if answered is not None:
+            return answered
+
+        pending = self.pending_approvals()
+        if pending:
+            # Otto is mid-question. Starting a new task here would replace
+            # `current` and orphan the outstanding approval: nothing in the UI
+            # could reach it any more, and only the broker's timeout would ever
+            # resolve it. Re-ask instead — "stop" is how you back out.
+            return self._reask(spoken, pending[0])
+
+        task = Task(request=spoken, source=source)
         with self._lock:
             self.tasks.append(task)
             self.current = task
@@ -94,6 +161,72 @@ class Otto:
             self.last_error = task.error
         finally:
             self.set_state(ERROR if task.status is Status.FAILED else IDLE)
+        return task
+
+    def _handle_reply(self, text: str) -> Task | None:
+        """Deal with "yes" / "no" / "stop" / "say that again".
+
+        Returns the task the answer belongs to, or None when this is an ordinary
+        command. An answer never creates a task of its own: "yes" belongs to the
+        request already in flight, and cluttering the history with it would make
+        the recent-tasks list unreadable.
+        """
+        from .voice.replies import CANCEL, REPEAT, YES, classify_reply
+
+        verdict = classify_reply(text)
+        if verdict is None:
+            return None
+
+        if verdict == CANCEL:
+            message = "Stopped." if self.cancel() else "There's nothing running."
+            self.services.speak(message)
+            return self._answer_task(text, message)
+
+        if verdict == REPEAT:
+            last = self.services.last_spoken or "I haven't said anything yet."
+            self.services.speak(last)
+            return self._answer_task(text, last)
+
+        pending = self.pending_approvals()
+        if not pending:
+            # A bare yes or no with nothing waiting is not a command either —
+            # running it through the planner would just confuse everyone.
+            message = "There's nothing waiting for an answer."
+            self.services.speak(message)
+            return self._answer_task(text, message)
+
+        granted = verdict == YES
+        approval = pending[0]
+        self.decide_approval(granted, approval)
+        self.services.speak("OK." if granted else "OK, I won't.")
+        with self._lock:
+            current = self.current
+        return current if current is not None else self._answer_task(
+            text, "OK." if granted else "OK, I won't."
+        )
+
+    def _reask(self, text: str, approval: Approval) -> Task:
+        from .voice.replies import spoken_question
+
+        message = (
+            f"I'm still waiting on this. {spoken_question(approval.reason)} "
+            "Or say stop to cancel."
+        )
+        self.services.speak(message)
+        self.services.audit.record(
+            "command_deferred",
+            reason="an approval was still pending",
+            pending=approval.reason,
+            attempted=text[:200],
+        )
+        return self._answer_task(text, message)
+
+    def _answer_task(self, text: str, summary: str) -> Task:
+        """A completed, unrecorded Task so callers always get one back."""
+        task = Task(request=text, source="voice")
+        task.summary = summary
+        task.set_status(Status.RUNNING)
+        task.set_status(Status.COMPLETED)
         return task
 
     def submit(self, text: str, *, source: str = "text",

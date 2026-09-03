@@ -32,6 +32,26 @@ STATE_TITLES = {
     ERROR: "⚠️",
 }
 
+NOTHING_TO_ANSWER = "Approve  (nothing to answer)"
+
+
+def elide(text: str, limit: int) -> str:
+    """Shorten from the middle, not the end.
+
+    A menu-bar line is short and an approval question usually ends with the thing
+    it is about — "Create the folder /Users/apple/Desktop/Invoices?" truncated at
+    the end reads "Create the folder /Users/apple/Deskt", which tells the user
+    nothing about what they are approving.
+    """
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    if limit <= 3:
+        return text[:limit]
+    head = (limit - 1) // 2
+    tail = limit - 1 - head
+    return f"{text[:head]}…{text[-tail:]}"
+
 STATE_LABELS = {
     IDLE: "Ready",
     LISTENING: "Listening…",
@@ -53,6 +73,7 @@ class MenuBarApp:
         self.hotkey: Any = None
         self.voice: Any = None
         self._rumps: Any = None
+        self._pending_reason: str = ""
 
     # -- construction ------------------------------------------------------
 
@@ -66,8 +87,17 @@ class MenuBarApp:
         self.status_item = rumps.MenuItem(STATE_LABELS[IDLE])
         self.status_item.set_callback(None)
 
+        # Answering lives at the top of the menu because it is the only thing that
+        # is ever urgent. Both entries are permanent: rumps' dynamic menu editing
+        # is fiddly and untestable here, and an item that is always in the same
+        # place is easier to hit than one that appears and disappears.
+        self.approve_item = rumps.MenuItem(NOTHING_TO_ANSWER, callback=self.on_approve)
+        self.deny_item = rumps.MenuItem("Deny", callback=self.on_deny)
+
         self.app.menu = [
             self.status_item,
+            self.approve_item,
+            self.deny_item,
             None,
             rumps.MenuItem(f"Talk to Otto  ({config.hotkey})", callback=self.on_talk),
             rumps.MenuItem("Type a command…", callback=self.on_type),
@@ -90,6 +120,9 @@ class MenuBarApp:
         from ..voice.pipeline import VoicePipeline
 
         self.voice = VoicePipeline(self.otto)
+        # A microphone exists, so an approval can be answered by voice and must
+        # not be auto-denied for want of a UI.
+        self.otto.voice_answers = True
 
         from .hotkey import HotkeyManager
 
@@ -111,6 +144,13 @@ class MenuBarApp:
                 label = f"{label} ({', '.join(agents)})"
             elif task.request:
                 label = f"{label} “{task.request[:32]}”"
+        if state == WAITING and self._pending_reason:
+            label = f"❓ {elide(self._pending_reason, 52)}"
+        elif state in (IDLE, ERROR) and self._pending_reason:
+            # The task is over, so whatever it was asking is moot. Tied to the
+            # end of the task rather than to the approval list, which is empty
+            # both before a question is asked and after it is answered.
+            self._clear_pending()
         if state is ERROR and self.otto.last_error:
             label = f"⚠️ {self.otto.last_error[:48]}"
         try:
@@ -241,15 +281,51 @@ class MenuBarApp:
     # -- approvals ---------------------------------------------------------
 
     def _ask_approval(self, approval: Any) -> None:
-        """Blocking modal on the main thread; the worker waits on the event."""
-        window = self._rumps.alert(
-            title="Otto needs your OK",
-            message=f"{approval.reason}\n\nAgent: {approval.agent_id}\n"
-                    f"Level: {approval.level}",
-            ok="Allow",
-            cancel="Deny",
-        )
-        approval.decide(bool(window))
+        """Show the question without blocking anything.
+
+        This deliberately does **not** open a modal. `rumps.alert` blocks the main
+        thread until it is dismissed, which on a voice-first assistant is exactly
+        wrong: Otto has just asked the question out loud, and the user answers by
+        pressing the hotkey and saying yes — but the hotkey's handler cannot get
+        the answer back to a UI that is stuck behind a modal nobody clicked.
+
+        So the pending question goes in the menu and in a notification, and any of
+        three routes can answer it: say yes, click Approve, or click Deny.
+        """
+        self._pending_reason = approval.reason
+        try:
+            self.approve_item.title = f"✅ Approve: {elide(approval.reason, 52)}"
+            self.deny_item.title = "❌ Deny"
+        except Exception:
+            pass
+        self._notify("Otto needs your OK", f"{elide(approval.reason, 140)} — say yes or no")
+        # Otto moves to WAITING *before* calling this hook, so the status line was
+        # already rendered without a question to show. Set it here rather than
+        # re-entering _on_state, which would take a stale state and could clear
+        # the very labels just set.
+        try:
+            self.app.title = STATE_TITLES[WAITING]
+            self.status_item.title = f"❓ {elide(approval.reason, 52)}"
+        except Exception:
+            pass
+
+    def _clear_pending(self) -> None:
+        self._pending_reason = ""
+        try:
+            self.approve_item.title = NOTHING_TO_ANSWER
+            self.deny_item.title = "Deny"
+        except Exception:
+            pass
+
+    def on_approve(self, _sender: Any = None) -> None:
+        if not self.otto.decide_approval(True):
+            self._notify("Otto", "There's nothing waiting for an answer.")
+        self._clear_pending()
+
+    def on_deny(self, _sender: Any = None) -> None:
+        if not self.otto.decide_approval(False):
+            self._notify("Otto", "There's nothing waiting for an answer.")
+        self._clear_pending()
 
     # -- helpers -----------------------------------------------------------
 

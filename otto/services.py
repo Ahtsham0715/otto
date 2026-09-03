@@ -54,6 +54,8 @@ class Services:
         self.broker = broker or ApprovalBroker(timeout=self.config.approval_timeout)
         self.registry = ToolRegistry(audit=self.audit, broker=self.broker)
         self._speech_lock = threading.Lock()
+        #: The last thing Otto said, so "say that again" can repeat it.
+        self.last_spoken: str = ""
         self._provider_cache: dict[str, Any] = {}
         register_default_tools(self.registry)
 
@@ -65,7 +67,12 @@ class Services:
         Kept here rather than in a tool so that the UI can speak status ("no model
         configured") without going through the agent loop.
         """
-        if not text or self.config.tts == "none":
+        if not text:
+            return
+        # Recorded even when TTS is off: "say that again" should still be able to
+        # repeat the last answer, and the text box shows it.
+        self.last_spoken = text
+        if self.config.tts == "none":
             return
         with self._speech_lock:
             if self.config.tts == "piper":

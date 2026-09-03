@@ -30,7 +30,9 @@ def home(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def config(home: Path) -> Config:
-    return Config(home=str(home))
+    # A short approval timeout: an unanswered approval should fail a test in
+    # seconds, not sit out the 180 s a real user is given to answer.
+    return Config(home=str(home), approval_timeout=2.0)
 
 
 @pytest.fixture

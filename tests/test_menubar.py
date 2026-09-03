@@ -14,6 +14,8 @@ Everything about rumps' *actual* behaviour remains unverified; see STATUS.md §3
 from __future__ import annotations
 
 import sys
+import threading
+import time
 import types
 
 import pytest
@@ -197,8 +199,6 @@ def test_typing_a_command_runs_it(bar, otto, rumps):
     for _ in range(200):
         if otto.services.mac.frontmost_app() == "Safari":
             break
-        import time
-
         time.sleep(0.01)
     assert otto.services.mac.frontmost_app() == "Safari"
 
@@ -281,32 +281,121 @@ def test_memory_opens_the_console_where_rows_are_visible(bar, otto):
 # -- approvals --------------------------------------------------------------
 
 
-def test_the_approval_modal_grants(bar, rumps):
-    rumps.alert_returns = 1
+def test_asking_for_approval_does_not_block(bar, rumps):
+    """The old design opened a modal, which blocks rumps' main thread — fatal for
+    a voice-first app, because the user answers with the hotkey and the answer
+    cannot get back to a UI stuck behind an unclicked dialog."""
     approval = Approval(tool="make_folder", args={"path": "/x"}, agent_id="files",
                         level="CONFIRM", reason="Create the folder /x?")
     bar._ask_approval(approval)
-    assert approval.granted is True
-    assert "Create the folder /x?" in rumps.alerts[-1][1]
-    assert "files" in rumps.alerts[-1][1]
+
+    assert approval.pending, "asking must not decide anything by itself"
+    assert rumps.alerts == [], "no modal may be opened"
+    assert "Create the folder /x?" in bar.approve_item.title
+    assert bar.deny_item.title == "❌ Deny"
+    assert any("say yes or no" in n[1] for n in bar.otto.services.mac.notifications)
 
 
-def test_the_approval_modal_denies(bar, rumps):
-    rumps.alert_returns = 0
-    approval = Approval(tool="move_to_trash", args={}, agent_id="files",
-                        level="ALWAYS_CONFIRM", reason="Trash it?")
-    bar._ask_approval(approval)
-    assert approval.granted is False
+def test_the_menu_approves_and_denies(bar):
+    for granted, callback in ((True, bar.on_approve), (False, bar.on_deny)):
+        approval = Approval(tool="t", args={}, agent_id="files", level="CONFIRM",
+                            reason="Do it?")
+        bar.otto.current = task = __import__(
+            "otto.core.state", fromlist=["Task"]
+        ).Task(request="x")
+        task.add_approval(approval)
+        bar._ask_approval(approval)
+
+        callback()
+
+        assert approval.granted is granted
+        assert bar.approve_item.title == "Approve  (nothing to answer)"
 
 
-def test_the_approval_hook_is_wired_to_the_broker(bar, otto, rumps, home):
-    """End to end: a CONFIRM tool raises the modal and the modal's answer lands."""
-    rumps.alert_returns = 1
-    otto.services.broker.set_auto(None)  # use the real hook, not the test shortcut
-    task = otto.handle_utterance("create a folder called FromMenu on my Desktop")
-    assert task.status.value == "COMPLETED"
+def test_answering_when_nothing_is_pending_says_so(bar):
+    bar.on_approve()
+    assert any("nothing waiting" in n[1] for n in bar.otto.services.mac.notifications)
+
+
+def test_a_confirmation_can_be_answered_from_the_menu(bar, otto, home):
+    """End to end, on the real threading: the tool blocks, the menu answers."""
+    otto.services.broker.set_auto(None)  # use the real prompt, not the shortcut
+    done: list = []
+
+    thread = threading.Thread(
+        target=lambda: done.append(
+            otto.handle_utterance("create a folder called FromMenu on my Desktop")
+        ),
+        daemon=True,
+    )
+    thread.start()
+
+    for _ in range(200):
+        if otto.pending_approvals():
+            break
+        time.sleep(0.01)
+    assert otto.pending_approvals(), "no approval was ever raised"
+    assert otto.state == WAITING
+    assert "FromMenu" in bar.status_item.title, (
+        "the question is elided from the middle so the folder name survives"
+    )
+
+    bar.on_approve()
+    thread.join(timeout=10)
+
+    assert done and done[0].status.value == "COMPLETED"
     assert (home / "Desktop" / "FromMenu").is_dir()
-    assert any("FromMenu" in a[1] for a in rumps.alerts)
+
+
+def test_a_confirmation_can_be_answered_by_voice(bar, otto, home):
+    """The point of the whole change: hands stay off the trackpad."""
+    otto.services.broker.set_auto(None)
+    done: list = []
+
+    thread = threading.Thread(
+        target=lambda: done.append(
+            otto.handle_utterance("create a folder called ByVoice on my Desktop")
+        ),
+        daemon=True,
+    )
+    thread.start()
+    for _ in range(200):
+        if otto.pending_approvals():
+            break
+        time.sleep(0.01)
+    assert otto.pending_approvals()
+
+    # What the voice pipeline does with a transcript of "yes".
+    otto.handle_utterance("yes", source="voice")
+    thread.join(timeout=10)
+
+    assert done and done[0].status.value == "COMPLETED"
+    assert (home / "Desktop" / "ByVoice").is_dir()
+
+
+def test_the_question_is_asked_out_loud(bar, otto, home):
+    otto.services.broker.set_auto(None)
+    thread = threading.Thread(
+        target=lambda: otto.handle_utterance("create a folder called Spoken on my Desktop"),
+        daemon=True,
+    )
+    thread.start()
+    for _ in range(200):
+        if otto.pending_approvals():
+            break
+        time.sleep(0.01)
+
+    spoken = " ".join(otto.services.mac.spoken)
+    assert "Spoken" in spoken
+    assert "Say yes or no" in spoken
+
+    otto.decide_approval(False)
+    thread.join(timeout=10)
+
+
+def test_the_menu_bar_enables_voice_answers(bar, otto):
+    """Without this an approval with no modal would be denied for want of a UI."""
+    assert otto.voice_answers is True
 
 
 # -- shutdown ---------------------------------------------------------------
