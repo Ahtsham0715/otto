@@ -426,8 +426,17 @@ class Supervisor:
             task.error = first.error
             task.set_status(Status.FAILED)
         else:
+            # A tool's own answer beats the fast path's optimistic phrasing: after
+            # running the tests the user wants "the tests passed", not "running the
+            # tests". The override is only the fallback for steps whose outcome is
+            # the action itself ("Opening Safari").
+            answer = self._tool_answer(done)
             details = [s.result for s in done if s.result]
-            task.summary = spoken_override or self._plain_result(task, done, details)
+            task.summary = (
+                answer
+                or spoken_override
+                or ("Done — " + "; ".join(details[:3]) + "." if details else "Done.")
+            )
             task.set_status(Status.COMPLETED)
 
         task.log("summary", task.summary)
@@ -436,8 +445,12 @@ class Supervisor:
         return task
 
     @staticmethod
-    def _plain_result(task: Task, done: list[Subtask], details: list[str]) -> str:
-        # Prefer a tool's own answer when the request was a question.
+    def _tool_answer(done: list[Subtask]) -> str:
+        """The answer a tool actually produced, or "" when it produced no answer.
+
+        Returning "" rather than a generic sentence is what lets the caller fall
+        back to the fast path's phrasing only when there is nothing better to say.
+        """
         for subtask in done:
             for call in subtask.calls:
                 if call.tool == "recall_memory" and call.result:
@@ -451,16 +464,22 @@ class Supervisor:
                     return f"{call.result['app']} — {call.result['title']}"
                 if call.tool == "run_command" and call.result:
                     code = call.result.get("exit_code")
-                    tail = (call.result.get("stdout") or "").strip().splitlines()[-3:]
                     verdict = "passed" if code == 0 else f"failed with exit code {code}"
-                    return f"The tests {verdict}. " + " ".join(tail)[:300]
+                    tail = _readable_tail(
+                        (call.result.get("stdout") or "")
+                        + "\n"
+                        + (call.result.get("stderr") or "")
+                    )
+                    return f"The tests {verdict}." + (f" {tail}" if tail else "")
                 if call.tool == "list_dir" and call.result:
                     entries = call.result.get("entries") or []
+                    if not entries:
+                        return "That folder is empty."
+                    noun = "item" if len(entries) == 1 else "items"
                     names = ", ".join(e["name"] for e in entries[:8])
-                    return f"{len(entries)} items: {names}" if entries else "That folder is empty."
-        if details:
-            return "Done — " + "; ".join(details[:3]) + "."
-        return "Done."
+                    more = "" if len(entries) <= 8 else f", and {len(entries) - 8} more"
+                    return f"{len(entries)} {noun}: {names}{more}"
+        return ""
 
     def _finish_without_model(self, task: Task, message: str) -> Task:
         """No LLM is configured and the fast path did not match.
@@ -484,3 +503,18 @@ class Supervisor:
         task.log("error", message)
         self.services.speak(message)
         return task
+
+
+def _readable_tail(output: str, limit: int = 220) -> str:
+    """The last line of command output worth saying out loud.
+
+    Test runners emit progress bars ("....F...  [ 47%]") and rules of dashes,
+    which are meaningless spoken. Keep the last line that is mostly words.
+    """
+    for line in reversed([ln.strip() for ln in (output or "").splitlines()]):
+        if not line:
+            continue
+        letters = sum(c.isalpha() for c in line)
+        if letters >= 6 and letters >= len(line) * 0.35:
+            return line[:limit]
+    return ""

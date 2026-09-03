@@ -270,12 +270,14 @@ def summarise_text(text: str, name: str = "", max_sentences: int = 5) -> str:
         if len(sentences) >= max_sentences:
             break
 
-    words = len(buffer.split()) + sum(len(h.split()) for h in headings)
+    # Prose only. Otto reads this out loud, and "6 non-empty lines, about 56 words"
+    # is noise when spoken — the counts go in the tool result instead, where the
+    # console can show them.
     parts = []
-    if name:
-        parts.append(f"{name}: {len(non_empty)} non-empty lines, about {words} words.")
     if headings:
-        parts.append("Sections: " + "; ".join(h.lstrip('# ').strip() for h in headings) + ".")
+        parts.append("It's about " + ", ".join(
+            h.lstrip("# ").strip() for h in headings
+        ) + ".")
     if sentences:
         parts.append(" ".join(s + "." for s in sentences[:max_sentences]))
     elif not headings:
@@ -289,11 +291,18 @@ def _summarise_file(ctx: ToolContext, path: str) -> dict[str, Any]:
         raise FileNotFoundError(f"{resolved} is not a file")
     text = _read_text(resolved, 120_000)
     summary = summarise_text(text, resolved.name)
+    lines = [ln for ln in text.splitlines() if ln.strip()]
     ctx.task.add_artifact(
         Artifact(kind="text", name=f"summary of {resolved.name}", value=summary,
                  subtask_id=ctx.subtask_id)
     )
-    return {"path": str(resolved), "summary": summary, "chars": len(text)}
+    return {
+        "path": str(resolved),
+        "summary": summary,
+        "chars": len(text),
+        "lines": len(lines),
+        "words": len(text.split()),
+    }
 
 
 def _verify_summary(ctx: ToolContext, args: dict, result: Any) -> tuple[bool, str]:

@@ -218,3 +218,20 @@ def test_the_fast_path_makes_no_model_calls(services):
     otto.handle_utterance("open Safari")
     otto.handle_utterance("create a folder called Test on my Desktop")
     assert provider.calls == [], "the fast path called the model"
+
+
+def test_long_paths_still_match(services, home):
+    """Real paths are routinely long; a short length cap silently drops the intent
+    and sends the request to a model the user may not have."""
+    deep = home / "Projects" / "a-fairly-deeply-nested" / "client-work" / "backend-service"
+    deep.mkdir(parents=True)
+    (deep / "pyproject.toml").write_text("")
+    assert len(str(deep)) > 60
+
+    matched = match(services, f"run the tests in {deep}")
+    assert matched is not None and matched.intent == "run_tests"
+    assert matched.plan.steps[0].args["cwd"] == str(deep)
+
+    matched = match(services, f"create a folder called Reports in {deep}")
+    assert matched is not None and matched.intent == "make_folder"
+    assert matched.plan.steps[0].args["path"] == str(deep / "Reports")

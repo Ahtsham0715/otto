@@ -180,7 +180,7 @@ _OPEN_APP = re.compile(r"^(?:open|launch|start|bring up|switch to)\s+(?P<app>.{1
 _MAKE_FOLDER = re.compile(
     r"^(?:create|make|add|new)\s+(?:a\s+)?(?:new\s+)?(?:folder|directory|dir)\s+"
     r"(?:called|named|@)?\s*(?P<name>[\w .'-]{1,60}?)\s*"
-    r"(?:(?:on|in|inside|under)\s+(?P<where>.{1,60}?))?$",
+    r"(?:(?:on|in|inside|under)\s+(?P<where>.{1,240}?))?$",
     re.I,
 )
 _REMEMBER = re.compile(
@@ -200,13 +200,13 @@ _SUMMARISE = re.compile(
     re.I,
 )
 _LIST_DIR = re.compile(
-    r"^(?:list|show|what'?s in)\s+(?:the\s+|my\s+)?(?:contents of\s+)?(?P<where>.{1,60}?)"
+    r"^(?:list|show|what'?s in)\s+(?:the\s+|my\s+)?(?:contents of\s+)?(?P<where>.{1,240}?)"
     r"(?:\s+folder)?$",
     re.I,
 )
 _RUN_TESTS = re.compile(
     r"^(?:(?:open\s+(?P<proj>.{1,40}?)\s+and\s+)?)?(?:run|execute)\s+(?:the\s+)?tests?"
-    r"(?:\s+(?:in|for|on)\s+(?P<where>.{1,60}))?$",
+    r"(?:\s+(?:in|for|on)\s+(?P<where>.{1,240}))?$",
     re.I,
 )
 _ACTIVE_WINDOW = re.compile(
@@ -215,8 +215,8 @@ _ACTIVE_WINDOW = re.compile(
     re.I,
 )
 _TRASH = re.compile(
-    r"^(?:delete|remove|trash|bin)\s+(?P<path>[~/][^\s]+|[\w .-]+\.\w{1,6}|[\w .-]{1,60}?)"
-    r"(?:\s+(?:from|on|in)\s+(?P<where>.{1,40}))?$",
+    r"^(?:delete|remove|trash|bin)\s+(?P<path>[~/][^\s]+|[\w .-]+\.\w{1,6}|[\w .-]{1,120}?)"
+    r"(?:\s+(?:from|on|in)\s+(?P<where>.{1,240}))?$",
     re.I,
 )
 

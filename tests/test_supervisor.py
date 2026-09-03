@@ -493,3 +493,66 @@ def test_a_provider_outage_mid_step_fails_cleanly(approving):
     task = run(approving, "check something")
     assert task.status is Status.FAILED
     assert "unreachable" in task.subtasks[0].error
+
+
+# -- what Otto actually says ------------------------------------------------
+
+
+def test_a_tool_answer_beats_the_fast_paths_phrasing(approving, home):
+    """After running the tests you want the outcome, not "running the tests"."""
+    project = home / "Projects" / "app"
+    project.mkdir()
+    (project / "pyproject.toml").write_text("[project]\nname='app'\n")
+    (project / "tests").mkdir()
+    (project / "tests" / "test_x.py").write_text("def test_x():\n    assert True\n")
+
+    task = run(approving, f"run the tests in {project}")
+    assert task.status is Status.COMPLETED
+    assert "The tests passed" in task.summary
+    assert "Running the tests" not in task.summary
+
+
+def test_a_failing_test_run_says_so(approving, home):
+    project = home / "Projects" / "app"
+    project.mkdir()
+    (project / "pyproject.toml").write_text("[project]\nname='app'\n")
+    (project / "tests").mkdir()
+    (project / "tests" / "test_x.py").write_text("def test_x():\n    assert False\n")
+
+    task = run(approving, f"run the tests in {project}")
+    assert task.status is Status.COMPLETED  # the command ran; it just failed
+    assert "failed with exit code" in task.summary
+
+
+def test_progress_bars_are_not_read_out_loud():
+    from otto.agentloop.supervisor import _readable_tail
+
+    output = "....F...ss..                    [ 47%]\n=========================\n2 failed, 8 passed in 1.20s\n"
+    assert _readable_tail(output) == "2 failed, 8 passed in 1.20s"
+    assert _readable_tail("=====\n....  [100%]\n") == ""
+    assert _readable_tail("") == ""
+
+
+def test_the_fast_path_phrasing_is_still_used_when_there_is_no_answer(approving):
+    task = run(approving, "open Safari")
+    assert task.summary == "Opening Safari."
+
+
+def test_a_single_item_folder_is_not_1_items(approving, home):
+    (home / "Documents" / "notes.md").write_text("hello")
+    task = run(approving, "what's in my Documents")
+    assert "1 item:" in task.summary
+    assert "1 items" not in task.summary
+
+
+def test_a_summary_is_prose_not_statistics(approving, home):
+    doc = home / "Documents" / "notes.md"
+    doc.write_text(
+        "# Sprint notes\n\nWe shipped the billing flow on Tuesday and it has been "
+        "stable ever since, which is a relief for everyone involved.\n"
+    )
+    task = run(approving, f"read {doc} and summarise it")
+    assert "billing flow" in task.summary
+    # Spoken output must not lead with counts.
+    assert "non-empty lines" not in task.summary
+    assert "words." not in task.summary
