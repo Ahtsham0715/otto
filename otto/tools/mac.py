@@ -23,8 +23,12 @@ from .registry import ToolContext, ToolSpec
 
 
 def _open_app(ctx: ToolContext, name: str) -> dict[str, Any]:
-    ctx.mac.open_app(name)
-    resolved = ctx.mac.frontmost_app() or name
+    # Resolve to the installed app's real name *before* opening, so verification
+    # checks the app we were asked for. Reading `frontmost_app()` back here would
+    # make the verifier tautological: it would happily confirm that whatever is on
+    # screen is on screen, even if nothing launched.
+    resolved = ctx.mac.resolve_app(name)
+    ctx.mac.open_app(resolved)
     ctx.memory.note_usage("app", resolved)
     return {"app": resolved, "requested": name}
 

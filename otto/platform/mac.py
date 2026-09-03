@@ -95,6 +95,14 @@ class MacBridge(abc.ABC):
     def open_app(self, name: str) -> None: ...
 
     @abc.abstractmethod
+    def resolve_app(self, name: str) -> str:
+        """Map a spoken/typed name to an installed app's real name, or raise.
+
+        Separate from `open_app` so a verifier can know which app it is checking
+        for without asking the screen what happens to be in front of it.
+        """
+
+    @abc.abstractmethod
     def frontmost_app(self) -> str | None: ...
 
     @abc.abstractmethod
@@ -333,6 +341,9 @@ class OsascriptMac(MacBridge):
             f"{clean!r} matches several installed apps: {', '.join(sorted(partial)[:5])}"
         )
 
+    def resolve_app(self, name: str) -> str:
+        return self._require_installed(name)
+
     def open_app(self, name: str) -> None:
         self.run_script("open_app", self._require_installed(name))
 
@@ -524,6 +535,9 @@ class FakeMac(MacBridge):
 
     def running_apps(self) -> list[str]:
         return list(self.running)
+
+    def resolve_app(self, name: str) -> str:
+        return self._require_installed(name)
 
     def open_app(self, name: str) -> None:
         resolved = self._require_installed(name)
