@@ -14,9 +14,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from otto.app import Otto  # noqa: E402
-from otto.config import Config, ProviderConfig  # noqa: E402
+from otto.config import Config  # noqa: E402
 from otto.core.state import Subtask, Task  # noqa: E402
-from otto.providers.base import MockProvider  # noqa: E402
 from otto.services import Services  # noqa: E402
 from otto.tools.registry import ToolContext  # noqa: E402
 
@@ -83,13 +82,3 @@ def ctx_for(services: Services, task: Task):
         )
 
     return build
-
-
-def use_mock_provider(services: Services, *, scripted=None, tier="both", **kw) -> MockProvider:
-    """Point one or both tiers at a MockProvider and return it."""
-    provider = MockProvider(scripted=dict(scripted or {}), **kw)
-    tiers = ("fast", "strong") if tier == "both" else (tier,)
-    for name in tiers:
-        services.config.providers[name] = ProviderConfig(kind="mock", model="mock-1")
-        services._provider_cache[name] = provider
-    return provider

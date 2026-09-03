@@ -250,6 +250,11 @@ class MemoryStore:
             for w in _WORD.findall(text or "")
             if w.lower() not in _STOPWORDS
         ][:6]
+        # An empty query means "show me everything" (the memory list in the UI).
+        # A query that *had* words but none worth matching on means "nothing
+        # matched" — otherwise "the a is" would return the user's whole profile.
+        if (text or "").strip() and not terms:
+            return []
         placeholders = ",".join("?" for _ in scopes)
         params: list[Any] = list(scopes)
         query = f"SELECT * FROM memories WHERE scope IN ({placeholders})"
