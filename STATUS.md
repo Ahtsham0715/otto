@@ -4,13 +4,13 @@ Built overnight, unattended, on Linux. **I could not run a single line of macOS 
 That shapes everything below: this document separates what is *verified by tests that
 actually ran*, what is *reasoned but unproven*, and what is *not done*.
 
-**Test suite: 387 tests, all passing, in 5.8 seconds.** No Mac, no microphone, no model,
+**Test suite: 404 tests, all passing, in 5.9 seconds.** No Mac, no microphone, no model,
 no network required.
 
 ```
 $ python3 -m pytest tests -q
 ...........................................................................
-387 passed in 5.79s
+404 passed in 5.87s
 ```
 
 ---
@@ -65,7 +65,7 @@ Every item here has at least one test that executed in this sandbox and passed.
 | Area | Tests | What is actually proven |
 | --- | --- | --- |
 | **Command screening** | 48 | Each argument-level bypass is refused: `find -exec/-execdir/-ok/-delete`, `git -c` (sshCommand and credential.helper), `git --upload-pack=`/`--receive-pack=`/`--exec-path=`/`--config-env=`, `ext::` URLs, `rg --pre`, `make -f`/`--eval`, `python -c`, `node -e`, `npm --node-options=`, `--use-compress-program`. Shells are off the allowlist; paths are not binary names; every shell metacharacter in any argument is refused; the child environment is stripped of every credential-shaped variable |
-| **macOS bridge & injection** | 38 | Against the **real** `OsascriptMac` with `subprocess` replaced: four AppleScript injection payloads — including `" & (do shell script "id") & "` — appear **only** as trailing `on run argv` arguments and never in the script source; `shell=False` throughout; `say` takes text as an argument; permission errors (-1743) are recognised; path-shaped and metacharacter app names are refused; non-http URL schemes are refused |
+| **macOS bridge & injection** | 55 | Against the **real** `OsascriptMac` with `subprocess` replaced: four AppleScript injection payloads — including `" & (do shell script "id") & "` — appear **only** as trailing `on run argv` arguments and never in the script source; `shell=False` throughout; `say` takes text as an argument; permission errors (-1743) are recognised; path-shaped and metacharacter app names are refused; non-http URL schemes are refused |
 | **Filesystem scope** | 31 | `$HOME` itself is not a root; `/etc/passwd` refused; `../../..` refused; **a symlink inside Desktop pointing outside is refused** (both directory and file); 18 credential path shapes refused even inside an allowed folder; lookalike names (`environment.md`, `keynote.txt`) still allowed |
 | **Secrets & audit** | 26 | 11 credential shapes detected, 6 ordinary preferences not; redaction covers keys, value shapes and nested structures; the audit file never contains the secret it audited; the Keychain call is an argv list with `shell=False` (verified by patching `subprocess`, not a stand-in) |
 | **Fast path** | 29 | Seven spoken phrasings of "open Safari" reach one intent; every fast-path plan validates against the real roster; **fast-path commands make zero model calls**; a fast-path plan still hits the permission engine (a denied approval leaves no folder behind) |
@@ -79,13 +79,18 @@ Every item here has at least one test that executed in this sandbox and passed.
 | **Console** | in the 38 above | Binds to 127.0.0.1; the snapshot needs a token; memory is editable and deletable; a secret is refused; **no route executes anything** (five exec-shaped paths all 404) |
 | **State** | 10 | The transition table; terminal states are terminal; a cancelled task cannot resurrect; **three threads blocked on approvals are all released by one cancel** |
 
-Two real bugs were found by these tests and fixed, not papered over:
+Three real bugs were found and fixed, not papered over:
 
 1. `open_app` read `frontmost_app()` back as its own result, making its verifier
    tautological — an app that silently failed to launch still "verified". The bridge now
    exposes `resolve_app()` and the verifier checks the app that was *asked for*.
 2. Memory search treated a query of pure stopwords ("the a is") as an empty query and
    returned the user's entire profile.
+3. `click_element` and `type_into_element` used a `whose name is …` filter on the
+   *process*, which only sees its direct children — so any button nested in a toolbar
+   or group (that is, most buttons) would never have been found. Both now walk the
+   window's contents. Found by reading rather than by a test, because no test in this
+   environment can execute AppleScript; recorded here rather than quietly fixed.
 
 Also verified by running them here: **`setup.sh` end to end** (creates the venv,
 installs wheels, handles an unreachable model download without a traceback, runs the
@@ -102,7 +107,7 @@ as a hypothesis with a stated experiment.
 | # | What is unverified | Why I could not test it | How to verify, in one step |
 | --- | --- | --- | --- |
 | 1 | **Every real `osascript` call**: `open_app`, `open_url`, `frontmost`, `active_window`, `running_apps`, `click_element`, `type_into`, `select_menu`, the accessibility `tree` dump, clipboard, `notify`, Trash | No macOS | `./run.sh --text "open Safari"` — it should report *"Safari is frontmost"* |
-| 2 | **That the accessibility scripts are valid AppleScript at all.** They are syntactically plausible and follow the System Events idiom, but an unparsed script is an error at runtime, not import time. `select_menu` and `tree` are the most likely to need adjusting | No `osascript` | `osascript -e 'tell application "System Events" to tell process "Safari" to click menu item "New Window" of menu 1 of menu bar item "File" of menu bar 1'` — then Otto's own `select_menu_item` |
+| 2 | **That the accessibility scripts are valid AppleScript at all.** They use fully explicit nested `tell` blocks, and a test checks every block is balanced and that no value is interpolated — but balanced is not the same as *compiles*, and an unparsed script is a runtime error, not an import error. `select_menu` and `tree` are the most likely to need adjusting | No `osascript` | `osascript -e 'tell application "System Events" to tell process "Safari" to click menu item "New Window" of menu 1 of menu bar item "File" of menu bar 1'` — then Otto's own `select_menu_item` |
 | 3 | **The Trash move.** `FakeMac` records the call; it does not move anything, so the verifier's real branch (`path no longer exists`) has never run | No Finder | Create `~/Desktop/junk.txt`, `./run.sh --text "delete ~/Desktop/junk.txt"`, approve, confirm it is in the Trash and *not* deleted |
 | 4 | **The AppleScript injection defence in production.** The *mechanism* is tested (values go in as argv, never as source). What is untested is that a real `osascript` treats those argv values as inert text | No `osascript` | Run the one-liner below — it must **echo** the payload, not run `id` |
 | 5 | **The menu bar itself.** No `rumps` here, so `MenuBarApp` has never been constructed: the status item, the seven state titles, the approval modal, `rumps.Window` for typing | No PyObjC | `./run.sh` — a 🎙 should appear; every menu item should open something |

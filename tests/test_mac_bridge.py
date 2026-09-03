@@ -265,3 +265,107 @@ def test_open_failures_are_injectable():
     mac.open_failures["Safari"] = MacError("Safari refused to launch")
     with pytest.raises(MacError, match="refused to launch"):
         mac.open_app("Safari")
+
+
+# -- structural checks on scripts we cannot compile here --------------------
+
+
+def _blocks(script: str) -> dict[str, tuple[int, int]]:
+    lines = [ln.strip() for ln in script.splitlines()]
+    # A block `tell` occupies its own line; `tell X to <statement>` does not open
+    # one. A block `if` ends with "then"; anything after "then" is a one-liner.
+    opens = {
+        "tell": sum(1 for ln in lines if ln.startswith("tell ") and " to " not in ln),
+        "repeat": sum(1 for ln in lines if ln.startswith("repeat")),
+        "if": sum(1 for ln in lines if ln.startswith("if ") and ln.endswith("then")),
+        "try": sum(1 for ln in lines if ln == "try"),
+    }
+    closes = {
+        "tell": lines.count("end tell"),
+        "repeat": lines.count("end repeat"),
+        "if": lines.count("end if"),
+        "try": lines.count("end try"),
+    }
+    return {k: (opens[k], closes[k]) for k in opens}
+
+
+@pytest.mark.parametrize("key", sorted(__import__(
+    "otto.platform.mac", fromlist=["_SCRIPTS"]
+)._SCRIPTS))
+def test_every_script_is_structurally_sound(key):
+    """These scripts are never compiled in this environment, so this is the only
+    automated protection they have. It cannot prove they are correct AppleScript;
+    it does catch an unbalanced block, which is the easiest way to break one."""
+    from otto.platform.mac import _SCRIPTS
+
+    script = _SCRIPTS[key]
+    assert script.startswith("on run argv"), f"{key} must take its values from argv"
+    assert script.rstrip().endswith("end run")
+    for kind, (opened, closed) in _blocks(script).items():
+        assert opened == closed, f"{key}: {opened} {kind} vs {closed} end {kind}"
+
+
+def test_no_script_contains_a_formatting_placeholder():
+    """A placeholder in a script would be a way back to injection.
+
+    Note `{}` alone is not one — it is AppleScript's empty list, which the tree
+    script legitimately uses. What must not appear is a *named or indexed* slot.
+    """
+    import re
+
+    from otto.platform.mac import _SCRIPTS
+
+    placeholder = re.compile(r"\{[A-Za-z_0-9]+\}|%[sdr]\b")
+    for key, script in _SCRIPTS.items():
+        assert not placeholder.search(script), f"{key} has a format placeholder"
+        assert "do shell script" not in script, f"{key} shells out"
+
+
+def test_run_script_has_no_way_to_interpolate_a_value():
+    """The structural guarantee behind the injection tests.
+
+    The one function that calls osascript looks its script up in a table and
+    passes it along untouched. String literals are stripped before checking, so
+    that the word "script" inside an error message is not mistaken for the
+    variable — it is the *script value* that must never be built.
+    """
+    import inspect
+    import io
+    import re
+    import tokenize
+
+    from otto.platform.mac import OsascriptMac
+
+    source = inspect.getsource(OsascriptMac.run_script)
+
+    # Rebuild each line with string literals blanked out.
+    blanked: dict[int, str] = {}
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        row = token.start[0]
+        text = "" if token.type == tokenize.STRING else token.string
+        blanked[row] = blanked.get(row, "") + " " + text
+
+    assignments = [
+        line.strip() for line in blanked.values() if re.match(r"\s*script\s*=[^=]", line)
+    ]
+    assert len(assignments) == 1, f"script is assigned more than once: {assignments}"
+    assert "_SCRIPTS [ key ]" in assignments[0].replace("  ", " "), assignments[0]
+
+    for line in blanked.values():
+        if not re.search(r"\bscript\b", line) or line.strip() == assignments[0].strip():
+            continue
+        # Every remaining mention of the script must pass it along whole.
+        assert ".format" not in line, line
+        assert "+" not in line, line
+        assert "%" not in line, line
+
+
+def test_every_script_key_is_reachable_through_run_script():
+    """A script nobody calls is dead weight that still has to be maintained."""
+    import inspect
+
+    from otto.platform import mac
+
+    source = inspect.getsource(mac.OsascriptMac)
+    for key in mac._SCRIPTS:
+        assert f'"{key}"' in source, f"{key} is never used"

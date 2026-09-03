@@ -181,42 +181,110 @@ _SCRIPTS: dict[str, str] = {
     "open_url": (
         "on run argv\n open location (item 1 of argv)\nend run"
     ),
+    # Elements are found by walking the window's contents and comparing names,
+    # rather than with a `whose` clause on the process — a `whose` filter only
+    # sees the process's direct children, so a button nested inside a group or a
+    # toolbar (which is most buttons) would never be found.
     "click_element": (
-        'on run argv\n set appName to item 1 of argv\n set elName to item 2 of argv\n'
-        ' tell application "System Events" to tell process appName\n'
-        "  set target to first UI element whose name is elName\n"
-        "  click target\n end tell\nend run"
+        "on run argv\n"
+        " set appName to item 1 of argv\n"
+        " set elName to item 2 of argv\n"
+        ' tell application "System Events"\n'
+        "  tell process appName\n"
+        "   set hit to missing value\n"
+        "   repeat with w in windows\n"
+        "    repeat with e in (entire contents of w)\n"
+        "     try\n"
+        "      if (name of e as text) is elName then\n"
+        "       set hit to e\n"
+        "       exit repeat\n"
+        "      end if\n"
+        "     end try\n"
+        "    end repeat\n"
+        "    if hit is not missing value then exit repeat\n"
+        "   end repeat\n"
+        "   if hit is missing value then\n"
+        '    error "no element named " & elName & " in " & appName\n'
+        "   end if\n"
+        "   click hit\n"
+        "  end tell\n"
+        " end tell\n"
+        "end run"
     ),
     "type_into": (
-        'on run argv\n set appName to item 1 of argv\n set elName to item 2 of argv\n'
+        "on run argv\n"
+        " set appName to item 1 of argv\n"
+        " set elName to item 2 of argv\n"
         " set theText to item 3 of argv\n"
-        ' tell application "System Events" to tell process appName\n'
-        "  set target to first text field whose name is elName\n"
-        "  set focused of target to true\n"
-        "  set value of target to theText\n end tell\nend run"
+        ' tell application "System Events"\n'
+        "  tell process appName\n"
+        "   set hit to missing value\n"
+        "   repeat with w in windows\n"
+        "    repeat with e in (entire contents of w)\n"
+        "     try\n"
+        "      if (name of e as text) is elName then\n"
+        "       set hit to e\n"
+        "       exit repeat\n"
+        "      end if\n"
+        "     end try\n"
+        "    end repeat\n"
+        "    if hit is not missing value then exit repeat\n"
+        "   end repeat\n"
+        "   if hit is missing value then\n"
+        '    error "no element named " & elName & " in " & appName\n'
+        "   end if\n"
+        "   try\n"
+        "    set focused of hit to true\n"
+        "   end try\n"
+        "   set value of hit to theText\n"
+        "  end tell\n"
+        " end tell\n"
+        "end run"
     ),
     "select_menu": (
-        'on run argv\n set appName to item 1 of argv\n set menuName to item 2 of argv\n'
+        "on run argv\n"
+        " set appName to item 1 of argv\n"
+        " set menuName to item 2 of argv\n"
         " set itemName to item 3 of argv\n"
-        ' tell application "System Events" to tell process appName\n'
-        "  click menu item itemName of menu 1 of menu bar item menuName of "
-        "menu bar 1\n end tell\nend run"
+        ' tell application "System Events"\n'
+        "  tell process appName\n"
+        "   click menu item itemName of menu 1 of menu bar item menuName "
+        "of menu bar 1\n"
+        "  end tell\n"
+        " end tell\n"
+        "end run"
     ),
+    # Bounded on purpose. `entire contents` of a complex window can take many
+    # seconds and pin a core — on a machine that throttles, an inspection tool
+    # that spins the fans is a tool nobody uses. Two levels reach the toolbars,
+    # groups and buttons that matter; `find_element` still searches deeply.
     "tree": (
-        'on run argv\n set appName to item 1 of argv\n'
-        ' tell application "System Events" to tell process appName\n'
-        "  set out to {}\n"
-        "  repeat with w in windows\n"
-        '   set end of out to "window\\t" & (name of w)\n'
-        "   repeat with e in (entire contents of w)\n"
-        "    try\n"
-        '     set end of out to ((class of e) as text) & "\\t" & (name of e as text)\n'
-        "    end try\n"
+        "on run argv\n"
+        " set appName to item 1 of argv\n"
+        " set out to {}\n"
+        ' tell application "System Events"\n'
+        "  tell process appName\n"
+        "   repeat with w in windows\n"
+        '    set end of out to "window" & tab & (name of w as text)\n'
+        "    repeat with e in (UI elements of w)\n"
+        "     try\n"
+        '      set end of out to ((class of e) as text) & tab & (name of e as text)\n'
+        "     end try\n"
+        "     try\n"
+        "      repeat with c in (UI elements of e)\n"
+        "       try\n"
+        '        set end of out to ((class of c) as text) & tab & '
+        "(name of c as text)\n"
+        "       end try\n"
+        "      end repeat\n"
+        "     end try\n"
+        "    end repeat\n"
         "   end repeat\n"
-        "  end repeat\n"
-        '  set AppleScript\'s text item delimiters to linefeed\n'
-        "  return out as text\n"
-        " end tell\nend run"
+        "  end tell\n"
+        " end tell\n"
+        " set AppleScript's text item delimiters to linefeed\n"
+        " return out as text\n"
+        "end run"
     ),
     "read_clipboard": "on run argv\n return (the clipboard as text)\nend run",
     "write_clipboard": "on run argv\n set the clipboard to (item 1 of argv)\nend run",
