@@ -493,7 +493,14 @@ class Supervisor:
             task.set_status(Status.COMPLETED)
 
         task.log("summary", task.summary)
-        if self.services.config.speak_results and task.summary:
+        # Never say the same thing twice: a plan whose whole job was to speak has
+        # already said it, and following it with a summary of itself is the kind
+        # of thing that makes an assistant tiring to use.
+        if (
+            self.services.config.speak_results
+            and task.summary
+            and task.summary.strip() != (self.services.last_spoken or "").strip()
+        ):
             self.services.speak(task.summary)
         return task
 
@@ -506,6 +513,11 @@ class Supervisor:
         """
         for subtask in done:
             for call in subtask.calls:
+                if call.tool == "speak" and call.result:
+                    # The answer *is* what was said. Returning it keeps the menu
+                    # and the console showing the real content rather than
+                    # "Done", and stops the summary being said on top of it.
+                    return str(call.result.get("text") or "")
                 if call.tool == "recall_memory" and call.result:
                     lines = call.result.get("lines") or []
                     if lines:

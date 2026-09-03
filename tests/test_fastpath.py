@@ -41,9 +41,46 @@ def test_app_aliases_are_resolved(services):
         assert matched.plan.steps[0].args["name"] == "Visual Studio Code", phrase
 
 
-def test_an_app_that_is_not_installed_falls_through_to_the_planner(services):
+def test_an_app_that_is_not_installed_falls_through_when_a_model_can_help(services):
+    from otto.config import ProviderConfig
+
+    services.config.providers["strong"] = ProviderConfig(kind="ollama", model="qwen2.5:3b")
     assert match(services, "open the pod bay doors") is None
     assert match(services, "open Photoshop") is None
+
+
+def test_an_unknown_app_gets_a_useful_reply_when_there_is_no_model(services):
+    """Speech recognition garbles proper nouns constantly. With no model to fall
+    through to, guessing at the nearest installed app beats "no model
+    configured"."""
+    assert not services.config.any_model_configured
+
+    matched = match(services, "open Safaris")
+    assert matched is not None and matched.intent == "unknown_app"
+    said = matched.plan.steps[0].args["text"]
+    assert "Safari" in said and "Did you mean" in said
+
+    matched = match(services, "open the pod bay doors")
+    assert matched.intent == "unknown_app"
+    assert "Say help" in matched.plan.steps[0].args["text"]
+
+
+def test_help_is_answerable_without_a_model(services):
+    for phrase in ("help", "what can you do", "what can I say", "show me your commands"):
+        matched = match(services, phrase)
+        assert matched is not None and matched.intent == "help", phrase
+    said = match(services, "help").plan.steps[0].args["text"]
+    assert "open Safari" in said
+    assert "say yes or no" in said.lower()
+    assert "no language model" in said.lower()
+
+
+def test_help_does_not_mention_the_missing_model_once_one_is_set_up(services):
+    from otto.config import ProviderConfig
+
+    services.config.providers["fast"] = ProviderConfig(kind="ollama", model="qwen2.5:3b")
+    said = match(services, "help").plan.steps[0].args["text"]
+    assert "no language model" not in said.lower()
 
 
 # -- URLs -------------------------------------------------------------------

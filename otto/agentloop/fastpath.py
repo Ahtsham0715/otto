@@ -209,6 +209,12 @@ _RUN_TESTS = re.compile(
     r"(?:\s+(?:in|for|on)\s+(?P<where>.{1,240}))?$",
     re.I,
 )
+_HELP = re.compile(
+    r"^(?:help|what can you do|what can i say|what do you do|"
+    r"what are you able to do|how do i use you|"
+    r"(?:list|show)(?: me)? (?:your )?commands)\??$",
+    re.I,
+)
 _ACTIVE_WINDOW = re.compile(
     r"^(?:what(?:'s| is)?\s+(?:the\s+)?(?:active|frontmost|current)\s+(?:window|app)|"
     r"what am i looking at|which app is (?:active|open|frontmost))\??$",
@@ -238,6 +244,14 @@ def match(request: str, services: "Services") -> FastMatch | None:
             Plan([_step(1, "mac", f"Open {url}", "open_url", {"url": url})]),
             spoken=f"Opening {url}",
             intent="open_url",
+        )
+
+    m = _HELP.match(text)
+    if m:
+        return FastMatch(
+            Plan([_step(1, "memory", "Explain what Otto can do", "speak",
+                        {"text": help_text(services)})]),
+            intent="help",
         )
 
     m = _ACTIVE_WINDOW.match(text)
@@ -364,7 +378,66 @@ def match(request: str, services: "Services") -> FastMatch | None:
                 intent="list_dir",
             )
 
+    # Last resort, and only when there is no model to fall through to: an
+    # "open something" that names no installed app. Speech recognition garbles
+    # proper nouns constantly, so guessing at the nearest real app is far more
+    # use than the generic "no model configured" reply. With a model configured
+    # this stays out of the way and lets the planner have it.
+    if not services.config.any_model_configured:
+        m = _OPEN_APP.match(text)
+        if m:
+            wanted = _app_name(m.group("app"))
+            if wanted:
+                return FastMatch(
+                    Plan([_step(1, "memory", f"Explain that {wanted} is not here",
+                                "speak", {"text": _no_such_app(services, wanted)})]),
+                    intent="unknown_app",
+                )
+
     return None
+
+
+def help_text(services: "Services") -> str:
+    """What Otto says when asked what it can do.
+
+    Spoken, so it is short and phrased as examples rather than a feature list —
+    and it names what actually works right now, which depends on whether a model
+    is configured.
+    """
+    lines = [
+        "You can say: open Safari.",
+        "Create a folder called Test on my Desktop.",
+        "Read a file and summarise it.",
+        "Run the tests in my project.",
+        "Remember that my projects live in tilde slash Projects.",
+        "What do you remember.",
+        "When I ask you to confirm something, say yes or no.",
+        "Say stop to cancel, or say that again to repeat me.",
+    ]
+    if not services.config.any_model_configured:
+        lines.append(
+            "There's no language model set up yet, so I handle these directly. "
+            "See SETUP for how to add one."
+        )
+    return " ".join(lines)
+
+
+def _no_such_app(services: "Services", wanted: str) -> str:
+    """A useful reply to a name that is not an app, with the nearest matches."""
+    import difflib
+
+    try:
+        installed = services.mac.list_apps()
+    except Exception:
+        installed = []
+    close = difflib.get_close_matches(wanted, installed, n=3, cutoff=0.5)
+    if close:
+        return f"I don't have an app called {wanted}. Did you mean {', or '.join(close)}?"
+    return (
+        f"I couldn't find an app called {wanted}, and I don't have a language "
+        "model set up to work out what else you meant. Say help to hear what I "
+        "can do."
+    )
 
 
 def _plausible_app(name: str, services: "Services") -> bool:

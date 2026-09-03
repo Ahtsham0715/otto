@@ -221,7 +221,9 @@ def test_every_confirmation_prompt_renders(services):
     checked = 0
     for name, spec in _prompting_tools(services):
         args = _plausible_args(spec)
-        rendered = spec.confirm_template.format(tool=name, args=args, **args)
+        # Through the registry, which is what supplies the derived `_spoken`
+        # values the templates use.
+        rendered = services.registry._confirm_text(spec, args, services.config.home)
         assert rendered, name
         assert "{" not in rendered, f"{name}: unrendered placeholder in {rendered!r}"
         assert rendered != "Allow {tool}?".format(tool=name), (
@@ -236,10 +238,12 @@ def test_no_confirmation_prompt_dumps_a_large_value(services):
     spec = services.registry.get("write_file")
     args = {"path": "/Users/apple/Desktop/notes.txt", "content": "x" * 5000,
             "append": False}
-    rendered = spec.confirm_template.format(tool="write_file", args=args, **args)
+    rendered = services.registry._confirm_text(spec, args, "/Users/apple")
     assert "x" * 100 not in rendered
     assert "notes.txt" in rendered
     assert len(rendered) < 200
+    # And it is phrased the way it will be heard, not as a raw path.
+    assert rendered == "Save changes to notes.txt on your Desktop?"
 
 
 def test_a_broken_template_still_produces_something(services):
@@ -258,3 +262,24 @@ def test_a_broken_template_still_produces_something(services):
         confirm_template="{missing_key} please?",
     )
     assert services.registry._confirm_text(spec, {"a": "x"})
+
+
+def test_paths_are_described_the_way_a_person_would_say_them():
+    """This is the sentence Otto says most often, so it has to sound like
+    English rather than a filesystem path read out one slash at a time."""
+    from otto.tools.registry import friendly_path
+
+    home = "/Users/apple"
+    assert friendly_path("/Users/apple/Desktop/Invoices", home) == (
+        "Invoices on your Desktop"
+    )
+    assert friendly_path("/Users/apple/Documents/report.md", home) == (
+        "report.md in your Documents"
+    )
+    assert friendly_path("/Users/apple/Desktop", home) == "your Desktop"
+    # Deeper paths keep enough context to be unambiguous.
+    assert "app" in friendly_path("/Users/apple/Projects/app/tests", home)
+    # Anything outside home stays exact: a friendly-but-wrong description of
+    # what is about to change would be worse than a long one.
+    assert friendly_path("/etc/hosts", home) == "/etc/hosts"
+    assert friendly_path("", home) == ""

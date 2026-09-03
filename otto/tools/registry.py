@@ -251,7 +251,9 @@ class ToolRegistry:
             )
 
         if level is not Permission.SAFE:
-            reason = self._confirm_text(spec, cleaned)
+            reason = self._confirm_text(
+                spec, cleaned, getattr(ctx.config, "home", "")
+            )
             approval = self.broker.request(
                 ctx.task,
                 tool=name,
@@ -334,9 +336,21 @@ class ToolRegistry:
 
     # -- internals ---------------------------------------------------------
 
-    def _confirm_text(self, spec: ToolSpec, args: dict[str, Any]) -> str:
+    def _confirm_text(self, spec: ToolSpec, args: dict[str, Any], home: str = "") -> str:
+        """Render the sentence the human sees — and, more often, hears.
+
+        Path arguments get a `_spoken` companion, because this is the most-heard
+        sentence in Otto and "Create the folder slash Users slash apple slash
+        Desktop slash Invoices" is not how a person would ask.
+        """
+        extra: dict[str, Any] = {}
+        for key, value in args.items():
+            if isinstance(value, str) and key in ("path", "cwd", "file"):
+                extra[f"{key}_spoken"] = friendly_path(value, home)
         try:
-            return spec.confirm_template.format(tool=spec.name, args=args, **args)
+            return spec.confirm_template.format(
+                tool=spec.name, args=args, **args, **extra
+            )
         except (KeyError, IndexError, ValueError):
             return f"{spec.name} {args}"
 
@@ -383,6 +397,37 @@ class ToolRegistry:
             holder = ctx.task.subtasks[0] if ctx.task.subtasks else None
             if holder is not None:
                 holder.calls.append(call)
+
+
+def friendly_path(path: str, home: str = "") -> str:
+    """A path as a person would say it: "Invoices on your Desktop".
+
+    Falls back to the plain path whenever the shape is not one of the handful of
+    familiar places — a wrong-but-friendly description of what is about to be
+    changed would be worse than a long one.
+    """
+    import os
+
+    text = str(path or "")
+    if not text:
+        return text
+    home = str(home or "")
+    relative = text
+    if home and (text == home or text.startswith(home.rstrip(os.sep) + os.sep)):
+        relative = text[len(home.rstrip(os.sep)) + 1:]
+    else:
+        return text
+
+    parts = [p for p in relative.split(os.sep) if p]
+    if not parts:
+        return "your home folder"
+    place = parts[0]
+    if len(parts) == 1:
+        return f"your {place}"
+    name = parts[-1]
+    if len(parts) == 2:
+        return f"{name} on your {place}" if place in ("Desktop",) else f"{name} in your {place}"
+    return f"{name} in {os.sep.join(parts[:-1])}"
 
 
 def always_true(_ctx: ToolContext, _args: dict[str, Any], _result: Any) -> tuple[bool, str]:

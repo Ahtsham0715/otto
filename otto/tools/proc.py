@@ -114,7 +114,7 @@ RUN_COMMAND = ToolSpec(
     handler=_run_command,
     verifier=_verify_command,
     permission=Permission.CONFIRM,
-    confirm_template="Run {argv} in {cwd}?",
+    confirm_template="Run {argv} in {cwd_spoken}?",
 )
 
 

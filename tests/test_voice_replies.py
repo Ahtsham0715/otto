@@ -278,3 +278,28 @@ def test_the_answer_reaches_the_right_approval_when_several_queue_up(asking, hom
 
     asking.handle_utterance("no", source="voice")
     assert second.granted is False
+
+
+# -- Otto must not say the same thing twice ---------------------------------
+
+
+def test_a_spoken_answer_is_not_followed_by_a_summary_of_itself(otto):
+    """"What can you do" used to read the whole list and then add "Done —
+    spoken.", which is the kind of thing that makes an assistant tiring."""
+    task = otto.handle_utterance("what can you do")
+
+    assert "open Safari" in task.summary, "the summary should be the answer itself"
+    assert "Done" not in task.summary
+    assert otto.services.mac.spoken.count(task.summary) == 1
+
+
+def test_an_unknown_app_answer_is_spoken_once(otto):
+    task = otto.handle_utterance("open Safaris")
+    assert "Did you mean" in task.summary
+    assert otto.services.mac.spoken.count(task.summary) == 1
+
+
+def test_an_ordinary_command_still_speaks_its_result(otto):
+    task = otto.handle_utterance("open Safari")
+    assert task.summary == "Opening Safari."
+    assert "Opening Safari." in otto.services.mac.spoken

@@ -154,7 +154,7 @@ WRITE_FILE = ToolSpec(
     handler=_write_file,
     verifier=_verify_write,
     permission=Permission.CONFIRM,
-    confirm_template="Save changes to {path}?",
+    confirm_template="Save changes to {path_spoken}?",
 )
 
 
@@ -189,7 +189,7 @@ MAKE_FOLDER = ToolSpec(
     handler=_make_folder,
     verifier=_verify_folder,
     permission=Permission.CONFIRM,
-    confirm_template="Create the folder {path}?",
+    confirm_template="Create the folder {path_spoken}?",
 )
 
 
@@ -229,7 +229,7 @@ MOVE_TO_TRASH = ToolSpec(
     handler=_move_to_trash,
     verifier=_verify_trash,
     permission=Permission.ALWAYS_CONFIRM,
-    confirm_template="Move {path} to the Trash?",
+    confirm_template="Move {path_spoken} to the Trash?",
     destructive=True,
 )
 
