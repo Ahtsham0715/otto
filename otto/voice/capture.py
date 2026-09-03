@@ -105,29 +105,41 @@ class SoundDeviceCapture(AudioCapture):
                 return
             self._chunks = []
             self.sample_rate = sample_rate
-
-            def callback(indata, frames, time_info, status) -> None:  # noqa: ANN001
-                with self._lock:
-                    if self._recording:
-                        self._chunks.append(indata.copy())
-
-            try:
-                self._stream = sd.InputStream(
-                    samplerate=sample_rate,
-                    channels=1,
-                    dtype="float32",
-                    blocksize=1024,
-                    callback=callback,
-                )
-                self._stream.start()
-            except Exception as exc:  # pragma: no cover - needs a device
-                raise CaptureError(
-                    f"could not open the microphone: {exc}. Grant Microphone access "
-                    "in System Settings → Privacy & Security → Microphone."
-                ) from exc
+            self._np = np
+            # Mark recording *before* the stream starts: the callback runs on
+            # PortAudio's thread and may fire the instant the stream opens.
             self._recording = True
             self._started = time.time()
-            self._np = np
+
+        def callback(indata, frames, time_info, status) -> None:  # noqa: ANN001
+            # Audio callbacks must not block. This takes the lock only to append
+            # an already-copied block, and never calls anything that could wait.
+            with self._lock:
+                if self._recording:
+                    self._chunks.append(indata.copy())
+
+        # Opening and starting the stream happen OUTSIDE the lock. Holding it here
+        # would stall the audio thread on its very first callback — and with a
+        # non-reentrant lock it deadlocks outright if the callback is synchronous.
+        try:
+            stream = sd.InputStream(
+                samplerate=sample_rate,
+                channels=1,
+                dtype="float32",
+                blocksize=1024,
+                callback=callback,
+            )
+            stream.start()
+        except Exception as exc:
+            with self._lock:
+                self._recording = False
+            raise CaptureError(
+                f"could not open the microphone: {exc}. Grant Microphone access "
+                "in System Settings → Privacy & Security → Microphone."
+            ) from exc
+
+        with self._lock:
+            self._stream = stream
 
     def stop(self) -> Any:
         with self._lock:

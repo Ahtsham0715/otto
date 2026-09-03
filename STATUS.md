@@ -4,13 +4,13 @@ Built overnight, unattended, on Linux. **I could not run a single line of macOS 
 That shapes everything below: this document separates what is *verified by tests that
 actually ran*, what is *reasoned but unproven*, and what is *not done*.
 
-**Test suite: 443 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
+**Test suite: 467 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
 no network required.
 
 ```
 $ python3 -m pytest tests -q
 ...........................................................................
-443 passed in 7.96s
+467 passed in 7.88s
 ```
 
 ---
@@ -78,9 +78,10 @@ Every item here has at least one test that executed in this sandbox and passed.
 | **Voice & app** | 38 | Voice reaches the **same** `handle_utterance` as text (asserted with a spy) and produces identically-shaped tasks; silence names the Microphone permission; the ASR model is absent until used, preloaded during recording, and unloaded by a one-shot timer; **importing `otto.app` pulls in none of** torch/transformers/numpy/faster_whisper/sounddevice/rumps/pynput (checked in a subprocess) |
 | **Console** | in the 38 above | Binds to 127.0.0.1; the snapshot needs a token; memory is editable and deletable; a secret is refused; **no route executes anything** (five exec-shaped paths all 404) |
 | **State** | 10 | The transition table; terminal states are terminal; a cancelled task cannot resurrect; **three threads blocked on approvals are all released by one cancel** |
+| **ASR & microphone** | 24 | Against **stub `faster_whisper` and `sounddevice`**: Otto builds the model with `device="cpu"`, int8 and 4 threads, decodes greedily, reuses one model and reloads after unload; stereo is mixed to mono and int16 scaled correctly (real numpy); a missing wheel points at `setup.sh`; a device that will not open names the Microphone permission; **and the audio callback provably cannot deadlock against `start()`** |
 | **Menu bar & hotkey** | 32 | Against **stub `rumps` and `pynput` modules**: the status item builds, every menu entry has a title and a working callback, all seven UI states map to icons, the state line names the active agents, the approval modal's answer reaches the broker end to end (a real folder appears), Quit releases the hotkey/pipeline/console, and a missing pynput or a failed registration produces the Input Monitoring explanation rather than silence. This proves the code is correct **Python**; it proves nothing about rumps' real behaviour |
 
-Three real bugs were found and fixed, not papered over:
+Four real bugs were found and fixed, not papered over:
 
 1. `open_app` read `frontmost_app()` back as its own result, making its verifier
    tautological — an app that silently failed to launch still "verified". The bridge now
@@ -92,6 +93,12 @@ Three real bugs were found and fixed, not papered over:
    or group (that is, most buttons) would never have been found. Both now walk the
    window's contents. Found by reading rather than by a test, because no test in this
    environment can execute AppleScript; recorded here rather than quietly fixed.
+4. `SoundDeviceCapture.start` held its buffer lock while starting the stream, and the
+   audio callback takes that same non-reentrant lock. A callback arriving during
+   `stream.start()` would have stalled PortAudio's audio thread — and deadlocked
+   outright if it were synchronous. Found by a stub stream that calls back
+   immediately; the stream now opens outside the lock, and the regression test hangs
+   against the old code.
 
 Also verified by running them here: **`setup.sh` end to end** (creates the venv,
 installs wheels, handles an unreachable model download without a traceback, runs the
