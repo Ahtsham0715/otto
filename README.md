@@ -66,7 +66,7 @@ QA, Reviewer are records — id, role, instructions, model tier, tools, permissi
 ceiling, memory scope, step budget. Adding a specialist is adding a record.
 
 **The macOS boundary is an interface.** One `MacBridge` with an `osascript`
-implementation and a fake. That is what lets a 467-test suite run on Linux — and it is
+implementation and a fake. That is what lets a 473-test suite run on Linux — and it is
 why this README is careful, further down, about what has and has not been run on a real
 Mac.
 
@@ -103,8 +103,11 @@ is in code; none of it is prompt wording.
   in memory, logged, or written to this repo — the memory layer refuses and says why.
 - **Audit.** Every call is recorded, including the refused ones, with secrets redacted.
 - **The local console binds to 127.0.0.1** and has no route that executes anything.
-- **Cloud is always visible.** The menu shows ☁️ whenever a cloud model is in use, and
-  audio and file contents are never sent to one unless you explicitly allow it.
+- **Cloud is always visible, and gagged by default.** The menu shows ☁️ whenever a
+  cloud model is in use. File contents, command output and clipboard text are
+  **withheld** from a cloud model unless you turn `allow_cloud_file_contents` on — the
+  model is told they were withheld, so it says so instead of inventing them — and the
+  withholding is audited. A local model sees them, because nothing leaves the Mac.
 
 ---
 
@@ -206,7 +209,7 @@ otto/
   voice/              capture, ASR, the shared pipeline
   ui/                 menu bar, hotkey, developer console
 docs/                 RESEARCH, DECISIONS, ARCHITECTURE
-tests/                467 tests, all runnable without a Mac
+tests/                473 tests, all runnable without a Mac
 ```
 
 Start with [`SETUP.md`](SETUP.md). Then [`STATUS.md`](STATUS.md), which is candid about

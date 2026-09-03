@@ -4,13 +4,13 @@ Built overnight, unattended, on Linux. **I could not run a single line of macOS 
 That shapes everything below: this document separates what is *verified by tests that
 actually ran*, what is *reasoned but unproven*, and what is *not done*.
 
-**Test suite: 467 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
+**Test suite: 473 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
 no network required.
 
 ```
 $ python3 -m pytest tests -q
 ...........................................................................
-467 passed in 7.88s
+473 passed in 7.9s
 ```
 
 ---
@@ -71,7 +71,8 @@ Every item here has at least one test that executed in this sandbox and passed.
 | **Fast path** | 29 | Seven spoken phrasings of "open Safari" reach one intent; every fast-path plan validates against the real roster; **fast-path commands make zero model calls**; a fast-path plan still hits the permission engine (a denied approval leaves no folder behind) |
 | **Planner validation** | 27 | Unknown agent, supervisor-as-target, unknown tool, a tool the agent may not hold, missing description, duplicate id, dangling dependency, self-dependency, cycle, over-length plan and non-object args each reject the **whole** plan; prose is never parsed into a plan; waves group independent steps and serialise dependent ones |
 | **Tools + verification** | 42 | Verifiers re-read real state; a handler that lies is marked FAILED; a raising verifier is a failure, not a crash; a non-zero exit code is a *result* but a timeout is a failure; output is capped; Trash is used instead of unlink |
-| **Supervisor** | 22 | Independent steps genuinely **overlap in wall-clock time** (asserted with an Event, not by reading the code); dependent steps genuinely do not; a failure is retried **exactly once**; a retry whose verifier now passes **does not repeat the work**; cancelling while an approval is pending **releases the blocked worker**; a model replying in prose never has that prose turned into an action |
+| **Supervisor** | 28 | Independent steps genuinely **overlap in wall-clock time** (asserted with an Event, not by reading the code); dependent steps genuinely do not; a failure is retried **exactly once**; a retry whose verifier now passes **does not repeat the work**; cancelling while an approval is pending **releases the blocked worker**; a model replying in prose never has that prose turned into an action |
+| **Cloud privacy** | in the 28 above | A cloud model is **shown a refusal notice instead of the file** — the user's file contents, command output and clipboard are withheld unless `allow_cloud_file_contents` is on, the withholding is audited and put on the task timeline, and a local model sees them because nothing leaves the Mac |
 | **Permissions** | 9 | The broker **fails closed** with no UI attached; an agent ceiling refuses even when the human approves; a broken UI hook denies rather than hangs; a timeout becomes a denial; cancellation releases every outstanding approval |
 | **Memory** | 24 | Four scopes isolated; workspace memories only surface in their own workspace; secrets refused; everything deletable; usage counting; persistence across reopen |
 | **Providers** | 24 | Fenced/chattered JSON parsed, prose rejected; the null provider explains instead of pretending; request shapes for Ollama, OpenAI-compatible, Anthropic and Gemini; a non-http endpoint refused; keys come from the store, never the config file |

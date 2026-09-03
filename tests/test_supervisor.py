@@ -10,7 +10,7 @@ import pytest
 
 from tests.helpers import use_mock_provider
 from otto.agentloop.supervisor import Supervisor
-from otto.core.state import Status, Task
+from otto.core.state import Status, Subtask, Task
 
 
 def plan_json(*steps, rationale="r") -> str:
@@ -556,3 +556,131 @@ def test_a_summary_is_prose_not_statistics(approving, home):
     # Spoken output must not lead with counts.
     assert "non-empty lines" not in task.summary
     assert "words." not in task.summary
+
+
+# -- the user's data never reaches a cloud model without consent ------------
+
+
+class _CloudProvider:
+    """A provider that reports itself as cloud and records everything it is sent."""
+
+    name = "cloudy"
+    model = "remote-1"
+    is_cloud = True
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.seen: list[str] = []
+
+    def complete(self, messages, **kw):
+        from otto.providers.base import Completion
+
+        self.seen.append("\n".join(m.content for m in messages))
+        return Completion(text=self.replies.pop(0) if self.replies else '{"done": true, "result": "ok"}')
+
+    def available(self):
+        return True, "ok"
+
+    def describe(self):
+        return "cloudy:remote-1"
+
+
+def _read_plan(path):
+    return plan_json(
+        {"id": "s1", "agent": "research", "description": f"Read {path}"}
+    )
+
+
+def test_file_contents_are_withheld_from_a_cloud_model(approving, home):
+    secret_file = home / "Documents" / "diary.md"
+    secret_file.write_text("SUPERSECRETSENTENCE about my private life.")
+
+    provider = _CloudProvider([
+        _read_plan(secret_file),
+        json.dumps({"tool": "read_file", "args": {"path": str(secret_file)}}),
+        json.dumps({"done": True, "result": "I could not read it"}),
+    ])
+    approving._provider_cache["strong"] = provider
+    approving._provider_cache["fast"] = provider
+    approving.config.fast_path = False
+    approving.config.allow_cloud_file_contents = False
+
+    task = run(approving, "look at my diary")
+
+    everything_sent = "\n".join(provider.seen)
+    assert "SUPERSECRETSENTENCE" not in everything_sent
+    assert "not being shared" in everything_sent
+    assert approving.audit.count("content_withheld") == 1
+    assert any(e.kind == "privacy" for e in task.timeline)
+
+
+def test_file_contents_reach_a_cloud_model_once_allowed(approving, home):
+    doc = home / "Documents" / "notes.md"
+    doc.write_text("SHAREABLESENTENCE about the project.")
+
+    provider = _CloudProvider([
+        _read_plan(doc),
+        json.dumps({"tool": "read_file", "args": {"path": str(doc)}}),
+        json.dumps({"done": True, "result": "read it"}),
+    ])
+    approving._provider_cache["strong"] = provider
+    approving._provider_cache["fast"] = provider
+    approving.config.fast_path = False
+    approving.config.allow_cloud_file_contents = True
+
+    run(approving, "look at my notes")
+
+    assert "SHAREABLESENTENCE" in "\n".join(provider.seen)
+    assert approving.audit.count("content_withheld") == 0
+
+
+def test_a_local_model_sees_file_contents(approving, home):
+    """Nothing leaves the Mac, so there is nothing to withhold."""
+    doc = home / "Documents" / "notes.md"
+    doc.write_text("LOCALSENTENCE about the project.")
+
+    provider = _CloudProvider([
+        _read_plan(doc),
+        json.dumps({"tool": "read_file", "args": {"path": str(doc)}}),
+        json.dumps({"done": True, "result": "read it"}),
+    ])
+    provider.is_cloud = False
+    approving._provider_cache["strong"] = provider
+    approving._provider_cache["fast"] = provider
+    approving.config.fast_path = False
+    approving.config.allow_cloud_file_contents = False
+
+    run(approving, "look at my notes")
+    assert "LOCALSENTENCE" in "\n".join(provider.seen)
+
+
+def test_command_output_and_clipboard_are_covered_too(approving, home):
+    from otto.core.state import Status as S
+    from otto.tools.registry import ToolContext
+
+    approving.mac.clipboard = "CLIPBOARDSECRET"
+    provider = _CloudProvider([])
+    approving.config.allow_cloud_file_contents = False
+
+    task = Task(request="x")
+    task.subtasks.append(Subtask(description="s", agent_id="mac"))
+    ctx = ToolContext(task=task, agent=approving.roster.require("mac"),
+                      services=approving, subtask_id=task.subtasks[0].id)
+    call = approving.registry.dispatch(ctx, "read_clipboard", {})
+    assert call.status is S.COMPLETED
+
+    excerpt = Supervisor(approving)._shareable_excerpt(task, provider, call)
+    assert "CLIPBOARDSECRET" not in excerpt
+    assert "not being shared" in excerpt
+
+
+def test_a_status_only_tool_is_never_treated_as_content(approving):
+    provider = _CloudProvider([])
+    task = Task(request="x")
+    task.subtasks.append(Subtask(description="s", agent_id="mac"))
+    from otto.tools.registry import ToolContext
+
+    ctx = ToolContext(task=task, agent=approving.roster.require("mac"),
+                      services=approving, subtask_id=task.subtasks[0].id)
+    call = approving.registry.dispatch(ctx, "open_app", {"name": "Safari"})
+    assert Supervisor(approving)._shareable_excerpt(task, provider, call) == ""

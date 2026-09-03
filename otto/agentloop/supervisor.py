@@ -381,6 +381,9 @@ class Supervisor:
                 f"{tool} → {call.status.value}: "
                 f"{call.verification_detail or call.error}"
             )
+            excerpt = self._shareable_excerpt(task, provider, call)
+            if excerpt:
+                outcome += "\n" + excerpt
             task.log("agent_step", f"{agent.id} turn {turn}: {outcome}",
                      subtask_id=subtask.id, agent_id=agent.id)
             transcript.append(Message("assistant", completion.text[:500]))
@@ -397,6 +400,56 @@ class Supervisor:
 
         subtask.set_status(Status.FAILED)
         subtask.error = f"gave up after {agent.max_steps} steps"
+
+    #: Tools whose results contain the user's own content rather than a status.
+    CONTENT_TOOLS = {
+        "read_file": "content",
+        "summarise_file": "summary",
+        "run_command": "stdout",
+        "fetch_url": "content",
+        "read_clipboard": "text",
+    }
+
+    def _shareable_excerpt(self, task: Task, provider, call: ToolCall) -> str:
+        """The part of a tool's result the model is allowed to see.
+
+        A cloud model is someone else's computer. File contents, command output
+        and clipboard text are the user's data, so they are withheld from a cloud
+        provider unless the user has explicitly allowed it — enforced here rather
+        than promised in a prompt. A local model sees them: nothing leaves the Mac.
+
+        The withholding is audited and told to the model, so it can say it could
+        not read the file instead of inventing what was in it.
+        """
+        field = self.CONTENT_TOOLS.get(call.tool)
+        if field is None or call.status is not Status.COMPLETED:
+            return ""
+        if not isinstance(call.result, dict):
+            return ""
+        value = str(call.result.get(field) or "").strip()
+        if not value:
+            return ""
+
+        if getattr(provider, "is_cloud", False) and not self.services.config.allow_cloud_file_contents:
+            self.services.audit.record(
+                "content_withheld",
+                tool=call.tool,
+                task=task.id,
+                provider=provider.describe(),
+                reason="cloud provider and allow_cloud_file_contents is off",
+            )
+            task.log(
+                "privacy",
+                f"withheld the contents of {call.tool} from the cloud model "
+                "(Settings → allow_cloud_file_contents)",
+                subtask_id=call.subtask_id,
+            )
+            return (
+                "[The contents are not being shared with this model because it is a "
+                "cloud model and you have not allowed file contents to be sent. Say "
+                "so rather than guessing what it contained.]"
+            )
+        return value[:2000]
 
     # -- reporting ---------------------------------------------------------
 
