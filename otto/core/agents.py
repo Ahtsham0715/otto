@@ -156,6 +156,22 @@ DEFAULT_AGENTS: tuple[AgentSpec, ...] = (
         max_steps=6,
     ),
     AgentSpec(
+        id="memory",
+        name="Memory",
+        role="Stores and recalls the user's standing preferences.",
+        instructions=(
+            "Store what the user actually said, in their words. Never store "
+            "anything that looks like a credential."
+        ),
+        tools=("remember", "recall_memory", "forget_memory", "speak"),
+        # ALWAYS_CONFIRM so that `forget_memory` is reachable at all — and it still
+        # prompts the human every time, because deleting is the irreversible way.
+        ceiling=Permission.ALWAYS_CONFIRM,
+        memory_scope="global",
+        tier="fast",
+        max_steps=4,
+    ),
+    AgentSpec(
         id="qa",
         name="QA",
         role="Checks that a completed step actually achieved its outcome.",
