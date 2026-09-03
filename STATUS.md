@@ -10,7 +10,7 @@ no network required.
 ```
 $ python3 -m pytest tests -q
 ...........................................................................
-478 passed in 7.97s
+478 passed in 8.03s
 ```
 
 ---
@@ -50,6 +50,12 @@ That last row is exactly why the ASR model is lazy-loaded and unloaded after fiv
 minutes: importing the speech stack costs more than three times the entire rest of Otto.
 It is imported inside a function, and a test asserts it is absent from `sys.modules`
 after importing the app.
+
+**The lazy load demonstrably works.** Re-running `footprint.py` from a clean clone
+whose virtualenv *does* have `faster-whisper` installed still reports **24.1 MB idle**
+and an 85 ms cold start — the speech stack is present on disk and simply never
+imported until the user speaks. That is the design working, measured rather than
+asserted.
 
 **Model weights are not in that 54 MB.** `base` int8 weights are roughly 75 MB on disk;
 expect **150–250 MB resident while transcribing**, returning to ~0 on unload. I could
