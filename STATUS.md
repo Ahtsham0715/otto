@@ -4,13 +4,13 @@ Built overnight, unattended, on Linux. **I could not run a single line of macOS 
 That shapes everything below: this document separates what is *verified by tests that
 actually ran*, what is *reasoned but unproven*, and what is *not done*.
 
-**Test suite: 473 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
+**Test suite: 472 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
 no network required.
 
 ```
 $ python3 -m pytest tests -q
 ...........................................................................
-473 passed in 7.9s
+472 passed in 7.97s
 ```
 
 ---
