@@ -147,3 +147,34 @@ fed back in as context. No blind loops.
 **D-28 — Where the brief and the budget conflict, the budget wins**, and the cut is
 recorded in STATUS.md. Nothing in section 10 was cut for the budget in the end; what was
 cut was cut for time, and is listed there.
+
+**D-31 — Approvals are asked out loud and answered by voice; there is no modal.**
+`rumps.alert` blocks the main thread until it is clicked, which on a voice-first
+assistant is exactly backwards: Otto asks the question aloud, the user answers with
+the hotkey, and the answer cannot reach a UI stuck behind an unclicked dialog. The
+pending question goes to the menu (Approve / Deny), a notification and speech; three
+routes can answer it.
+*Cost:* a question is less impossible to ignore than a modal. Mitigated by the
+menu-bar icon changing to ❓, the status line carrying the question, and Otto saying
+it.
+
+**D-32 — "Yes" must be the whole utterance to count as consent.**
+Matching a prefix would let "yes but not that one" approve something irreversible.
+Anything that is not purely an answer falls through to the command path.
+*Cost:* an unusual phrasing ("go on then") is not recognised and gets re-asked.
+Erring this way is the only acceptable direction.
+
+**D-33 — A new command while a question is pending is deferred, not run.**
+Starting a task then would replace `current` and orphan the outstanding approval:
+nothing in the UI could reach it and only the broker's timeout would resolve it. Otto
+re-asks instead; "stop" is the way out. The deferral is audited.
+
+**D-34 — Confirmations name paths the way a person would say them.**
+"Create the folder Invoices on your Desktop?" rather than the full path read out one
+slash at a time. Anything outside the home folder is left exact — a friendly but
+inaccurate description of what is about to change would be worse than a long one.
+
+**D-35 — With no model configured, an unrecognised "open X" guesses at the nearest
+installed app** instead of replying "no language model is configured". Speech
+recognition garbles proper nouns constantly, and that reply is useless when the real
+problem is one wrong letter. With a model configured this stays out of the way.

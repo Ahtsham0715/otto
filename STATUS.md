@@ -4,13 +4,13 @@ Built overnight, unattended, on Linux. **I could not run a single line of macOS 
 That shapes everything below: this document separates what is *verified by tests that
 actually ran*, what is *reasoned but unproven*, and what is *not done*.
 
-**Test suite: 478 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
+**Test suite: 553 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
 no network required.
 
 ```
 $ python3 -m pytest tests -q
 ...........................................................................
-478 passed in 8.03s
+553 passed in 7.82s
 ```
 
 ---
@@ -86,9 +86,10 @@ Every item here has at least one test that executed in this sandbox and passed.
 | **Console** | in the 38 above | Binds to 127.0.0.1; the snapshot needs a token; memory is editable and deletable; a secret is refused; **no route executes anything** (five exec-shaped paths all 404) |
 | **State** | 10 | The transition table; terminal states are terminal; a cancelled task cannot resurrect; **three threads blocked on approvals are all released by one cancel** |
 | **ASR & microphone** | 24 | Against **stub `faster_whisper` and `sounddevice`**: Otto builds the model with `device="cpu"`, int8 and 4 threads, decodes greedily, reuses one model and reloads after unload; stereo is mixed to mono and int16 scaled correctly (real numpy); a missing wheel points at `setup.sh`; a device that will not open names the Microphone permission; **and the audio callback provably cannot deadlock against `start()`** |
-| **Menu bar & hotkey** | 32 | Against **stub `rumps` and `pynput` modules**: the status item builds, every menu entry has a title and a working callback, all seven UI states map to icons, the state line names the active agents, the approval modal's answer reaches the broker end to end (a real folder appears), Quit releases the hotkey/pipeline/console, and a missing pynput or a failed registration produces the Input Monitoring explanation rather than silence. This proves the code is correct **Python**; it proves nothing about rumps' real behaviour |
+| **Voice answering** | 46 | "yes" approves the pending action, "no" declines, "stop" cancels, "say that again" repeats — and **nothing that is not purely an answer is ever treated as consent** ("yes but not that one" leaves the question standing). An answer never becomes a task of its own; a new command while a question is open is deferred and audited rather than orphaning it; an approval nobody could answer is denied at once instead of waiting out the timeout |
+| **Menu bar & hotkey** | 36 | Against **stub `rumps` and `pynput` modules**: the status item builds, every menu entry has a title and a working callback, all seven UI states map to icons, the state line names the active agents, the approval modal's answer reaches the broker end to end (a real folder appears), Quit releases the hotkey/pipeline/console, and a missing pynput or a failed registration produces the Input Monitoring explanation rather than silence. This proves the code is correct **Python**; it proves nothing about rumps' real behaviour |
 
-Six real bugs were found and fixed, not papered over:
+Seven real bugs were found and fixed, not papered over:
 
 1. `open_app` read `frontmost_app()` back as its own result, making its verifier
    tautological — an app that silently failed to launch still "verified". The bridge now
@@ -110,6 +111,10 @@ Six real bugs were found and fixed, not papered over:
    prompt fell back to dumping the raw arguments — meaning the approval dialog for
    "save this file" would have shown the *entire file contents*. Every prompting
    tool's template is now rendered in a test, and the vague default is rejected.
+7. Issuing an unrelated command while Otto was waiting for an approval replaced the
+   current task and **orphaned the pending question**: nothing in the UI could reach
+   it, and only the broker's timeout ever resolved it. Found while testing spoken
+   answers. A new command is now deferred with a re-ask, and the deferral is audited.
 6. A missing PortAudio makes `import sounddevice` raise **OSError, not ImportError**
    — observed for real while running Otto from a clean clone here. Only ImportError
    was caught, so it escaped the hotkey handler as a traceback instead of a message.
