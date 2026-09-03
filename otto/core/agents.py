@@ -74,7 +74,7 @@ DEFAULT_AGENTS: tuple[AgentSpec, ...] = (
             "speak and to remember. Prefer the smallest plan that satisfies the "
             "request. If one step suffices, produce one step."
         ),
-        tools=("speak", "remember", "recall_memory"),
+        tools=("speak", "remember", "recall_memory", "forget_memory", "notify"),
         ceiling=Permission.SAFE,
         memory_scope="global",
         tier="strong",
