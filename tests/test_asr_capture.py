@@ -350,3 +350,66 @@ def test_the_audio_callback_does_not_deadlock_against_start(sd):
     thread.start()
     assert done.wait(timeout=5), "start() deadlocked against its own audio callback"
     assert len(capture.stop()) == 1024
+
+
+# -- a broken native library must not escape as a traceback -----------------
+
+
+def test_a_missing_portaudio_becomes_a_capture_error(monkeypatch):
+    """sounddevice raises OSError, not ImportError, when PortAudio is missing.
+
+    Observed for real in this sandbox: catching only ImportError let it escape
+    out of the hotkey handler as a traceback.
+    """
+
+    class Exploding(types.ModuleType):
+        def __getattr__(self, name):
+            raise OSError("PortAudio library not found")
+
+    def fake_import(name, *a, **kw):
+        if name == "sounddevice":
+            raise OSError("PortAudio library not found")
+        return real_import(name, *a, **kw)
+
+    import builtins
+
+    real_import = builtins.__import__
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(CaptureError, match="audio system is unavailable"):
+        SoundDeviceCapture().start(16000)
+
+
+def test_a_broken_ctranslate2_becomes_a_transcription_error(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **kw):
+        if name == "faster_whisper":
+            raise OSError("libstdc++.so.6: version GLIBCXX_3.4.29 not found")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(TranscriptionError, match="speech engine could not load"):
+        FasterWhisperTranscriber().transcribe([0.0] * 16, 16000)
+
+
+def test_the_pipeline_reports_a_broken_audio_stack_instead_of_crashing(otto, monkeypatch):
+    import builtins
+
+    from otto.voice.pipeline import VoicePipeline
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **kw):
+        if name == "sounddevice":
+            raise OSError("PortAudio library not found")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    pipeline = VoicePipeline(otto, SoundDeviceCapture(), None)
+    assert pipeline.start() is False  # not a traceback
+    assert "audio system" in otto.last_error

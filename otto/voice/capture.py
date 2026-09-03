@@ -95,9 +95,18 @@ class SoundDeviceCapture(AudioCapture):
         try:
             import numpy as np
             import sounddevice as sd
-        except ImportError as exc:  # pragma: no cover - needs the wheel
+        except ImportError as exc:
             raise CaptureError(
                 "sounddevice is not installed — run ./setup.sh, or use the text box."
+            ) from exc
+        except OSError as exc:
+            # sounddevice raises OSError, not ImportError, when it cannot find the
+            # PortAudio library. Catching only ImportError let that escape as a
+            # traceback out of the hotkey handler.
+            raise CaptureError(
+                f"the audio system is unavailable ({exc}). The macOS wheel bundles "
+                "PortAudio, so this usually means a broken install — try "
+                "./setup.sh again. Otto still works from the text box."
             ) from exc
 
         with self._lock:

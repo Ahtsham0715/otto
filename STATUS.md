@@ -4,13 +4,13 @@ Built overnight, unattended, on Linux. **I could not run a single line of macOS 
 That shapes everything below: this document separates what is *verified by tests that
 actually ran*, what is *reasoned but unproven*, and what is *not done*.
 
-**Test suite: 475 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
+**Test suite: 478 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
 no network required.
 
 ```
 $ python3 -m pytest tests -q
 ...........................................................................
-475 passed in 7.97s
+478 passed in 7.97s
 ```
 
 ---
@@ -82,7 +82,7 @@ Every item here has at least one test that executed in this sandbox and passed.
 | **ASR & microphone** | 24 | Against **stub `faster_whisper` and `sounddevice`**: Otto builds the model with `device="cpu"`, int8 and 4 threads, decodes greedily, reuses one model and reloads after unload; stereo is mixed to mono and int16 scaled correctly (real numpy); a missing wheel points at `setup.sh`; a device that will not open names the Microphone permission; **and the audio callback provably cannot deadlock against `start()`** |
 | **Menu bar & hotkey** | 32 | Against **stub `rumps` and `pynput` modules**: the status item builds, every menu entry has a title and a working callback, all seven UI states map to icons, the state line names the active agents, the approval modal's answer reaches the broker end to end (a real folder appears), Quit releases the hotkey/pipeline/console, and a missing pynput or a failed registration produces the Input Monitoring explanation rather than silence. This proves the code is correct **Python**; it proves nothing about rumps' real behaviour |
 
-Five real bugs were found and fixed, not papered over:
+Six real bugs were found and fixed, not papered over:
 
 1. `open_app` read `frontmost_app()` back as its own result, making its verifier
    tautological — an app that silently failed to launch still "verified". The bridge now
@@ -104,6 +104,12 @@ Five real bugs were found and fixed, not papered over:
    prompt fell back to dumping the raw arguments — meaning the approval dialog for
    "save this file" would have shown the *entire file contents*. Every prompting
    tool's template is now rendered in a test, and the vague default is rejected.
+6. A missing PortAudio makes `import sounddevice` raise **OSError, not ImportError**
+   — observed for real while running Otto from a clean clone here. Only ImportError
+   was caught, so it escaped the hotkey handler as a traceback instead of a message.
+   Both the audio and the speech-engine imports now catch OSError too. (On macOS the
+   wheel bundles PortAudio, so the user is unlikely to hit it — but a traceback out
+   of a menu-bar callback is the worst way to find that out.)
 
 Also verified by running them here: **`setup.sh` end to end** (creates the venv,
 installs wheels, handles an unreachable model download without a traceback, runs the

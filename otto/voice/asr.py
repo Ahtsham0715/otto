@@ -127,10 +127,19 @@ class FasterWhisperTranscriber(Transcriber):
                 return self._model
             try:
                 from faster_whisper import WhisperModel  # imported here on purpose
-            except ImportError as exc:  # pragma: no cover - needs the wheel
+            except ImportError as exc:
                 raise TranscriptionError(
                     "faster-whisper is not installed. Run ./setup.sh, or set "
-                    "tts/asr off in ~/.otto/config.json to use Otto by text only."
+                    "asr_model to 'none' in ~/.otto/config.json to use Otto by "
+                    "text only."
+                ) from exc
+            except OSError as exc:
+                # CTranslate2 is a compiled extension; a missing or mismatched
+                # system library surfaces as OSError, which must not escape as a
+                # traceback out of the hotkey handler.
+                raise TranscriptionError(
+                    f"the speech engine could not load ({exc}). Try ./setup.sh "
+                    "again; Otto still works from the text box."
                 ) from exc
             started = time.time()
             self._model = WhisperModel(
