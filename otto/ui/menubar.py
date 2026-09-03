@@ -206,7 +206,7 @@ class MenuBarApp:
                 "on explicitly."
             )
         lines.append("")
-        lines.append(f"Edit ~/.otto/config.json to change this.")
+        lines.append("Edit ~/.otto/config.json to change this.")
         self._alert("Otto — models", "\n".join(lines))
 
     def on_permissions(self, _sender: Any = None) -> None:

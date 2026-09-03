@@ -4,13 +4,13 @@ Built overnight, unattended, on Linux. **I could not run a single line of macOS 
 That shapes everything below: this document separates what is *verified by tests that
 actually ran*, what is *reasoned but unproven*, and what is *not done*.
 
-**Test suite: 404 tests, all passing, in 5.9 seconds.** No Mac, no microphone, no model,
+**Test suite: 443 tests, all passing, in 8 seconds.** No Mac, no microphone, no model,
 no network required.
 
 ```
 $ python3 -m pytest tests -q
 ...........................................................................
-404 passed in 5.87s
+443 passed in 7.96s
 ```
 
 ---
@@ -78,6 +78,7 @@ Every item here has at least one test that executed in this sandbox and passed.
 | **Voice & app** | 38 | Voice reaches the **same** `handle_utterance` as text (asserted with a spy) and produces identically-shaped tasks; silence names the Microphone permission; the ASR model is absent until used, preloaded during recording, and unloaded by a one-shot timer; **importing `otto.app` pulls in none of** torch/transformers/numpy/faster_whisper/sounddevice/rumps/pynput (checked in a subprocess) |
 | **Console** | in the 38 above | Binds to 127.0.0.1; the snapshot needs a token; memory is editable and deletable; a secret is refused; **no route executes anything** (five exec-shaped paths all 404) |
 | **State** | 10 | The transition table; terminal states are terminal; a cancelled task cannot resurrect; **three threads blocked on approvals are all released by one cancel** |
+| **Menu bar & hotkey** | 32 | Against **stub `rumps` and `pynput` modules**: the status item builds, every menu entry has a title and a working callback, all seven UI states map to icons, the state line names the active agents, the approval modal's answer reaches the broker end to end (a real folder appears), Quit releases the hotkey/pipeline/console, and a missing pynput or a failed registration produces the Input Monitoring explanation rather than silence. This proves the code is correct **Python**; it proves nothing about rumps' real behaviour |
 
 Three real bugs were found and fixed, not papered over:
 
@@ -110,8 +111,8 @@ as a hypothesis with a stated experiment.
 | 2 | **That the accessibility scripts are valid AppleScript at all.** They use fully explicit nested `tell` blocks, and a test checks every block is balanced and that no value is interpolated — but balanced is not the same as *compiles*, and an unparsed script is a runtime error, not an import error. `select_menu` and `tree` are the most likely to need adjusting | No `osascript` | `osascript -e 'tell application "System Events" to tell process "Safari" to click menu item "New Window" of menu 1 of menu bar item "File" of menu bar 1'` — then Otto's own `select_menu_item` |
 | 3 | **The Trash move.** `FakeMac` records the call; it does not move anything, so the verifier's real branch (`path no longer exists`) has never run | No Finder | Create `~/Desktop/junk.txt`, `./run.sh --text "delete ~/Desktop/junk.txt"`, approve, confirm it is in the Trash and *not* deleted |
 | 4 | **The AppleScript injection defence in production.** The *mechanism* is tested (values go in as argv, never as source). What is untested is that a real `osascript` treats those argv values as inert text | No `osascript` | Run the one-liner below — it must **echo** the payload, not run `id` |
-| 5 | **The menu bar itself.** No `rumps` here, so `MenuBarApp` has never been constructed: the status item, the seven state titles, the approval modal, `rumps.Window` for typing | No PyObjC | `./run.sh` — a 🎙 should appear; every menu item should open something |
-| 6 | **The global hotkey.** `pynput` is absent, and per the research it *fails silently* without Input Monitoring — the failure mode most likely to bite you | No macOS input stack | `./run.sh`, press ⌃⌥Space, watch for 🔴. If nothing: menu → *Check permissions…* |
+| 5 | **The menu bar against real rumps.** `MenuBarApp` *is* now built and driven in tests, but against a stub module — so callback wiring is proven and rumps' actual API contract is not. If rumps 0.4.0 differs from the stub (an argument name, `App.menu` semantics), it fails at launch | No PyObjC | `./run.sh` — a 🎙 should appear; every menu item should open something |
+| 6 | **The global hotkey against a real key press.** `HotkeyManager` is tested against a stub pynput (registration, firing, failure messages); what is untested is whether macOS delivers the event at all, which per the research *fails silently* without Input Monitoring — the failure mode most likely to bite you | No macOS input stack | `./run.sh`, press ⌃⌥Space, watch for 🔴. If nothing: menu → *Check permissions…* |
 | 7 | **The microphone.** `sounddevice`/PortAudio never opened a device; the real capture path and the "denied permission returns silence" assumption are untested against a real device | No audio hardware | Press the hotkey, speak, press again |
 | 8 | **All ASR numbers.** No model ever downloaded (huggingface.co blocked). Model load time, transcription latency, and the < 2 s budget are **extrapolations** from published benchmarks, not measurements | Network policy | `python3 -c "import time,faster_whisper as f; t=time.time(); m=f.WhisperModel('base',device='cpu',compute_type='int8'); print('load',time.time()-t)"`, then time a real command |
 | 9 | **`say`.** Argument construction is tested; nothing has ever been spoken | No macOS | `./run.sh --text "open Safari"` and listen |
