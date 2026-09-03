@@ -66,7 +66,7 @@ QA, Reviewer are records — id, role, instructions, model tier, tools, permissi
 ceiling, memory scope, step budget. Adding a specialist is adding a record.
 
 **The macOS boundary is an interface.** One `MacBridge` with an `osascript`
-implementation and a fake. That is what lets a 472-test suite run on Linux — and it is
+implementation and a fake. That is what lets a 475-test suite run on Linux — and it is
 why this README is careful, further down, about what has and has not been run on a real
 Mac.
 
@@ -209,7 +209,7 @@ otto/
   voice/              capture, ASR, the shared pipeline
   ui/                 menu bar, hotkey, developer console
 docs/                 RESEARCH, DECISIONS, ARCHITECTURE
-tests/                472 tests, all runnable without a Mac
+tests/                475 tests, all runnable without a Mac
 ```
 
 Start with [`SETUP.md`](SETUP.md). Then [`STATUS.md`](STATUS.md), which is candid about

@@ -74,8 +74,10 @@ class ToolSpec:
     handler: Handler
     verifier: Verifier
     permission: Permission | PermissionFn = Permission.SAFE
-    #: A short sentence shown to the human in the approval prompt.
-    confirm_template: str = "{tool} {args}"
+    #: A short sentence shown to the human in the approval prompt. The default is
+    #: deliberately vague — a prompting tool is expected to override it with
+    #: something specific, and a test enforces that.
+    confirm_template: str = "Allow {tool}?"
     required: tuple[str, ...] = ()
     destructive: bool = False
 

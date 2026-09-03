@@ -154,7 +154,7 @@ WRITE_FILE = ToolSpec(
     handler=_write_file,
     verifier=_verify_write,
     permission=Permission.CONFIRM,
-    confirm_template="Write {written_hint} to {path}?",
+    confirm_template="Save changes to {path}?",
 )
 
 

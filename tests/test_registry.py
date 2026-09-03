@@ -187,3 +187,74 @@ def test_audit_redacts_secrets(services, ctx_for):
     dumped = str(services.audit.recent())
     assert "sk-ABCDEFGHIJKLMNOPQRSTUV12345" not in dumped
     assert "[redacted]" in dumped
+
+
+# -- what the human is actually shown --------------------------------------
+
+
+def _plausible_args(spec):
+    """One value per schema field, of the right type."""
+    samples = {
+        "string": "sample",
+        "integer": 1,
+        "number": 1.0,
+        "boolean": False,
+        "array": ["ls"],
+        "object": {},
+    }
+    return {k: samples[v.get("type", "string")] for k, v in spec.schema.items()}
+
+
+def _prompting_tools(services):
+    """Tools that can actually raise an approval dialog."""
+    for name in services.registry.names():
+        spec = services.registry.get(name)
+        if spec.level_for(_plausible_args(spec)) is not Permission.SAFE:
+            yield name, spec
+
+
+def test_every_confirmation_prompt_renders(services):
+    """A template naming a key the tool does not have falls back to dumping the
+    raw arguments into the dialog — which for write_file meant showing the entire
+    file. The prompt is the last thing between the user and an action they cannot
+    undo, so it has to be readable."""
+    checked = 0
+    for name, spec in _prompting_tools(services):
+        args = _plausible_args(spec)
+        rendered = spec.confirm_template.format(tool=name, args=args, **args)
+        assert rendered, name
+        assert "{" not in rendered, f"{name}: unrendered placeholder in {rendered!r}"
+        assert rendered != "Allow {tool}?".format(tool=name), (
+            f"{name} prompts the human but never says what it is about to do"
+        )
+        checked += 1
+    assert checked >= 5, "expected several tools to require confirmation"
+
+
+def test_no_confirmation_prompt_dumps_a_large_value(services):
+    """Specifically: the prompt must not contain a whole file."""
+    spec = services.registry.get("write_file")
+    args = {"path": "/Users/apple/Desktop/notes.txt", "content": "x" * 5000,
+            "append": False}
+    rendered = spec.confirm_template.format(tool="write_file", args=args, **args)
+    assert "x" * 100 not in rendered
+    assert "notes.txt" in rendered
+    assert len(rendered) < 200
+
+
+def test_a_broken_template_still_produces_something(services):
+    """And if one ever does break, the fallback must not raise."""
+    from otto.core.permissions import Permission
+    from otto.tools.registry import ToolSpec, always_true
+
+    spec = ToolSpec(
+        name="oops",
+        description="d",
+        schema={"a": {"type": "string"}},
+        required=("a",),
+        handler=lambda ctx, a: a,
+        verifier=always_true,
+        permission=Permission.CONFIRM,
+        confirm_template="{missing_key} please?",
+    )
+    assert services.registry._confirm_text(spec, {"a": "x"})
