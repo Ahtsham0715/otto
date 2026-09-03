@@ -1,0 +1,22 @@
+# Otto's runtime wheels. The core harness — tasks, agents, tools, permissions,
+# memory, providers — imports nothing outside the standard library, which is why
+# the whole test suite runs with none of these installed.
+#
+# Every one of these has a pre-built wheel for macOS x86_64. Nothing compiles,
+# nothing needs Rust, nothing needs Xcode. There is deliberately no torch:
+# PyPI has no modern torch wheel for Intel macOS, and Otto is designed so that
+# it is never needed.
+
+# Menu bar (macOS only)
+rumps>=0.4.0; sys_platform == "darwin"
+pyobjc-framework-Cocoa>=9.0; sys_platform == "darwin"
+pyobjc-framework-ApplicationServices>=9.0; sys_platform == "darwin"
+
+# Global push-to-talk hotkey (macOS only)
+pynput>=1.7.6; sys_platform == "darwin"
+
+# Microphone capture
+sounddevice>=0.4.6
+
+# Speech to text — CTranslate2 int8, no torch
+faster-whisper>=1.0.0

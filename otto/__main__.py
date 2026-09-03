@@ -69,7 +69,8 @@ def _check(otto) -> int:
     print(f"  TTS                 {config.tts}")
     status = otto.model_status()
     for tier, info in status["tiers"].items():
-        print(f"  model[{tier}]        {info['kind']} {info['model']}".rstrip())
+        label = f"model[{tier}]"
+        print(f"  {label:<19} {info['kind']} {info['model']}".rstrip())
     if not status["any_configured"]:
         print("  → no model configured; the fast path still handles simple commands")
     if status["cloud_tiers"]:
